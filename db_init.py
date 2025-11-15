@@ -32,3 +32,37 @@ def init_db():
         FOREIGN KEY (contract_id) REFERENCES CONTRACT(contract_id)
     );
     """)
+      # CASH table
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS CASH (
+        balance REAL NOT NULL
+    );
+    """)
+
+    # Ensure exactly one CASH row
+    cur.execute("SELECT COUNT(*) FROM CASH;")
+    row_count = cur.fetchone()[0]
+    if row_count == 0:
+        cur.execute("INSERT INTO CASH (balance) VALUES (?);", (0.0,))
+
+    # PRICE table
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS PRICE (
+        ticker TEXT NOT NULL,
+        date   TEXT NOT NULL,
+        close  REAL NOT NULL,
+        PRIMARY KEY (ticker, date)
+    );
+    """)
+
+    conn.commit()
+    conn.close()
+
+def list_tables():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT name FROM sqlite_master WHERE type='table';")
+    tables = [row[0] for row in cur.fetchall()]
+    conn.close()
+    return tables
+
