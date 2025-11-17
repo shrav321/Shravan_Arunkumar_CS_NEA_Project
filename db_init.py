@@ -66,3 +66,12 @@ def list_tables():
     conn.close()
     return tables
 
+def insert_trade(contract_id, quantity, price, timestamp, side):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO TRADE (contract_id, quantity, price, timestamp, side)
+        VALUES (?, ?, ?, ?, ?);
+    """, (contract_id, quantity, price, timestamp, side))
+    conn.commit()
+    conn.close()
