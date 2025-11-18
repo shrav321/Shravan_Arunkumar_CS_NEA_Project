@@ -66,6 +66,37 @@ def list_tables():
     conn.close()
     return tables
 
+def insert_contract(contract_id, ticker, expiry, strike, ctype):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT OR IGNORE INTO CONTRACT (contract_id, ticker, expiry, strike, type)
+        VALUES (?, ?, ?, ?, ?);
+    """, (contract_id, ticker, expiry, strike, ctype))
+    conn.commit()
+    conn.close()
+
+def get_contract(contract_id):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT contract_id, ticker, expiry, strike, type
+        FROM CONTRACT
+        WHERE contract_id = ?;
+    """, (contract_id,))
+    row = cur.fetchone()
+    conn.close()
+    return row
+
+def count_contracts():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM CONTRACT;")
+    count = cur.fetchone()[0]
+    conn.close()
+    return count
+
+
 def insert_trade(contract_id, quantity, price, timestamp, side):
     conn = get_connection()
     cur = conn.cursor()
@@ -75,3 +106,16 @@ def insert_trade(contract_id, quantity, price, timestamp, side):
     """, (contract_id, quantity, price, timestamp, side))
     conn.commit()
     conn.close()
+
+def get_trades_for_contract(contract_id):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT trade_id, contract_id, quantity, price, timestamp, side
+        FROM TRADE
+        WHERE contract_id = ?
+        ORDER BY timestamp ASC;
+    """, (contract_id,))
+    rows = cur.fetchall()
+    conn.close()
+    return rows
