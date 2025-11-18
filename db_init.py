@@ -96,6 +96,26 @@ def count_contracts():
     conn.close()
     return count
 
+def get_cash():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT balance FROM CASH;")
+    balance = cur.fetchone()[0]
+    conn.close()
+    return balance
+
+
+def set_cash(new_balance):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE CASH SET balance = ?;", (new_balance,))
+    conn.commit()
+    conn.close()
+
+def adjust_cash(delta):
+    current = get_cash()
+    set_cash(current + delta)
+
 
 def insert_trade(contract_id, quantity, price, timestamp, side):
     conn = get_connection()
