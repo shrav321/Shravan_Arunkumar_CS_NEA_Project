@@ -1,13 +1,28 @@
-from db_init import init_db, get_cash, set_cash, adjust_cash
+from db_init import init_db, get_trades_for_contract
+from db_init import insert_contract, insert_trade  # Not strictly needed, but included for completeness
 
-def test_cash_initial_and_adjust():
+def test_invalid_contract_id_safety():
+    print("=== Test 3: Erroneous case (malformed contract id) ===")
+
+    # Fresh database
     init_db()
-    print("Initial cash:", get_cash())
-    set_cash(1000.0)
-    adjust_cash(-250.0)
-    print("Cash after debit:", get_cash())
 
+    # SQL injection 
+    bad_id = "AAPL_2025-12-19_100.00_C'; DROP TABLE TRADE; --"
+
+    # Attempt to query trades for this id
+    rows = get_trades_for_contract(bad_id)
+
+    print("Result of querying malformed contract id:")
+    print(rows)  # Expected: []
+
+    # Ensure TRADE table still exists
+    try:
+        safe_rows = get_trades_for_contract("AAPL_2025-12-19_100.00_C")
+        print("TRADE table still operational.")
+    except Exception as e:
+        print("Error: TRADE table may have been affected.")
+        print(e)
 
 if __name__ == "__main__":
-    test_cash_initial_and_adjust()
-
+    test_invalid_contract_id_safety()

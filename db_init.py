@@ -139,3 +139,27 @@ def get_trades_for_contract(contract_id):
     rows = cur.fetchall()
     conn.close()
     return rows
+
+def insert_price_row(ticker, date, close):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT OR IGNORE INTO PRICE (ticker, date, close)
+        VALUES (?, ?, ?);
+    """, (ticker, date, close))
+    conn.commit()
+    conn.close()
+
+
+def get_prices_for_ticker(ticker):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT date, close
+        FROM PRICE
+        WHERE ticker = ?
+        ORDER BY date ASC;
+    """, (ticker,))
+    rows = cur.fetchall()
+    conn.close()
+    return rows
