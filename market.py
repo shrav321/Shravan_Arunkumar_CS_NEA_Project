@@ -1,12 +1,8 @@
 # market.py
 
 def build_contract_id(ticker: str, expiry_iso: str, strike: float, option_type: str) -> str:
-    """
-    Build the canonical contract_id for an option.
-
-    Format: TICKER_YYYY-MM-DD_STRIKE.CC_SIDE
-            e.g. "AAPL_2025-12-19_150.00_C"
-    """
+ 
+    #Format: TICKER_YYYY-MM-DD_STRIKE.CC_SIDE
     # Normalise ticker
     ticker_clean = ticker.strip().upper()
 
