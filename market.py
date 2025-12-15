@@ -24,9 +24,7 @@ def build_contract_id(ticker: str, expiry_iso: str, strike: float, option_type: 
 
     return f"{ticker_clean}_{expiry_clean}_{strike_str}_{side}"
 
-# market.py
 
-# market.py
 
 from db_init import insert_contract
 
@@ -62,3 +60,36 @@ def ensure_contract_exists(contract_id: str, ticker: str, expiry: str, strike: f
     
     insert_contract(contract_id, ticker_clean, expiry_clean, strike_val, side)
 
+# market.py
+
+from typing import Any, Mapping
+
+
+def get_current_option_price(option_row: Mapping[str, Any]) -> float:
+    """
+    Extract a tradable option price from an option-chain row.
+
+    Preference order:
+    1) ask (if present and > 0)
+    2) lastPrice (if present and > 0)
+
+    Raises ValueError if no usable price can be obtained.
+    """
+    try:
+        ask = option_row.get("ask", None)
+        if ask is not None:
+            ask_f = float(ask)
+            if ask_f > 0:
+                return ask_f
+
+        last = option_row.get("lastPrice", None)
+        if last is not None:
+            last_f = float(last)
+            if last_f > 0:
+                return last_f
+
+    except (TypeError, ValueError):
+        # Handles missing keys, non-numeric values, or unexpected row structures
+        pass
+
+    raise ValueError("No usable option price found (ask and lastPrice missing or non-positive).")
