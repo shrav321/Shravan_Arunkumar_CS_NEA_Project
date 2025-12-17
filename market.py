@@ -93,3 +93,50 @@ def get_current_option_price(option_row: Mapping[str, Any]) -> float:
         pass
 
     raise ValueError("No usable option price found (ask and lastPrice missing or non-positive).")
+
+
+# market.py
+
+import yfinance as yf
+
+
+def get_underlying_spot(ticker: str) -> float:
+    """
+    Fetch the current spot price of the underlying asset.
+
+    Returns a positive float representing the latest tradable price.
+    Raises ValueError if a usable price cannot be obtained.
+    """
+    if ticker is None or str(ticker).strip() == "":
+        raise ValueError("ticker must be a non-empty string")
+
+    ticker_clean = ticker.strip().upper()
+
+    try:
+        yf_ticker = yf.Ticker(ticker_clean)
+
+        # Attempt to read fast_info first
+        fast_info = getattr(yf_ticker, "fast_info", None)
+        if fast_info is not None:
+            last_price = fast_info.get("last_price", None)
+            if last_price is not None:
+                last_f = float(last_price)
+                if last_f > 0:
+                    return last_f
+
+        # Fallback to info dictionary
+        info = yf_ticker.info
+        price = info.get("regularMarketPrice", None)
+        if price is not None:
+            price_f = float(price)
+            if price_f > 0:
+                return price_f
+
+    except (TypeError, ValueError, KeyError):
+        pass
+
+    raise ValueError(f"No usable spot price found for ticker {ticker_clean}")
+
+
+
+
