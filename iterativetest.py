@@ -1,18 +1,18 @@
-# test_get_current_option_price_test3_erroneous.py
+# test_add_funds_test3_erroneous.py
 
-from market import get_current_option_price
+from db_init import init_db, set_cash, get_cash
+from trades import add_funds
 
 print("TEST 3: Erroneous case")
 
-row = {"ask": 0, "lastPrice": None}
+init_db()
+set_cash(100.0)
 
 try:
-    _ = get_current_option_price(row)
-    print("FAIL: No error raised when price is unusable.")
+    _ = add_funds(0)
+    print("FAIL: No error raised for amount = 0")
 except ValueError as e:
     print("PASS: Error caught as expected:", e)
 
+print("Stored balance after failed attempt:", get_cash())
 print()
-
-
-
