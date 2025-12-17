@@ -1,0 +1,110 @@
+# trades.py
+
+from db_init import adjust_cash, get_cash
+
+
+def add_funds(amount: float) -> float:
+    """
+    Add funds to the simulated cash balance.
+
+    Returns the new balance after the funds are added.
+    """
+    if amount is None:
+        raise ValueError("amount must not be None")
+
+    # Convert to float early so validation is consistent for int, str-numeric, etc.
+    try:
+        amt = float(amount)
+    except (TypeError, ValueError):
+        raise ValueError("amount must be a number")
+
+   
+    if amt != amt:
+        raise ValueError("amount must not be NaN")
+
+    # Adding funds must be positive to prevent this routine being abused as a withdrawal.
+    if amt <= 0:
+        raise ValueError("amount must be > 0")
+
+    # Adjust the stored cash balance.
+    adjust_cash(amt)
+
+    # Read back the stored value and return it so the caller can display it immediately.
+    return get_cash()
+
+from datetime import datetime, timezone
+from typing import Any, Mapping
+
+from db_init import get_cash, adjust_cash, insert_trade
+from market import build_contract_id, ensure_contract_exists, get_current_option_price
+
+# Standard equity options represent 100 shares per contract.
+
+CONTRACT_MULTIPLIER = 100
+
+
+def execute_buy_from_market(option_row: Mapping[str, Any], quantity: int) -> dict:
+    """
+    Execute a BUY from a market option row.
+
+    Returns a small dict of key results for UI display and test assertions.
+    """
+    if option_row is None:
+        raise ValueError("option_row must not be None")
+
+    # Validate quantity early because it affects affordability and trade recording.
+    try:
+        qty = int(quantity)
+    except (TypeError, ValueError):
+        raise ValueError("quantity must be an integer")
+    if qty <= 0:
+        raise ValueError("quantity must be > 0")
+
+    # Extract required contract fields from the option row.
+    ticker = option_row.get("ticker", None)
+    expiry = option_row.get("expiry", None)
+    strike = option_row.get("strike", None)
+    option_type = option_row.get("type", None)
+
+    if ticker is None or str(ticker).strip() == "":
+        raise ValueError("option_row must contain a non-empty 'ticker'")
+    if expiry is None or str(expiry).strip() == "":
+        raise ValueError("option_row must contain a non-empty 'expiry'")
+    if strike is None:
+        raise ValueError("option_row must contain 'strike'")
+    if option_type is None or str(option_type).strip() == "":
+        raise ValueError("option_row must contain a non-empty 'type'")
+
+    # Build the canonical contract id and ensure CONTRACT row exists.
+    contract_id = build_contract_id(str(ticker), str(expiry), float(strike), str(option_type))
+    ensure_contract_exists(contract_id, str(ticker), str(expiry), float(strike), str(option_type))
+
+    # Determine current tradable option premium.
+    price = get_current_option_price(option_row)
+
+    # Total cash impact for a buy.
+    total_cost = price * qty * CONTRACT_MULTIPLIER
+
+    # Affordability check must happen before writing any state.
+    cash_before = get_cash()
+    if cash_before < total_cost:
+        raise ValueError("Insufficient funds to execute buy")
+
+    # Persist the trade and cash update.
+    timestamp = datetime.now(timezone.utc).isoformat()
+    insert_trade(contract_id, qty, price, timestamp, "BUY")
+    adjust_cash(-total_cost)
+
+    cash_after = get_cash()
+
+    return {
+        "contract_id": contract_id,
+        "side": "BUY",
+        "quantity": qty,
+        "price": price,
+        "multiplier": CONTRACT_MULTIPLIER,
+        "total_cost": total_cost,
+        "cash_before": cash_before,
+        "cash_after": cash_after,
+        "timestamp": timestamp,
+    }
