@@ -35,7 +35,7 @@ def add_funds(amount: float) -> float:
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
-from db_init import get_cash, adjust_cash, insert_trade
+from db_init import get_cash, adjust_cash, insert_trade, get_trades_for_contract
 from market import build_contract_id, ensure_contract_exists, get_current_option_price
 
 # Standard equity options represent 100 shares per contract.
@@ -106,5 +106,69 @@ def execute_buy_from_market(option_row: Mapping[str, Any], quantity: int) -> dic
         "total_cost": total_cost,
         "cash_before": cash_before,
         "cash_after": cash_after,
+        "timestamp": timestamp,
+    }
+
+
+from portfolio import derive_holdings_from_trade
+
+def execute_sell_from_portfolio(contract_id: str, quantity: int, option_row: Mapping[str, Any]) -> dict:
+    """
+    Execute a SELL for an existing position.
+
+    contract_id: canonical id of the contract to sell
+    quantity: number of contracts to sell (must be positive)
+    option_row: mapping containing pricing fields such as ask and lastPrice
+
+    Returns a dict of key results for UI display and test assertions.
+    """
+    if contract_id is None or str(contract_id).strip() == "":
+        raise ValueError("contract_id must be a non-empty string")
+    cid = str(contract_id).strip()
+
+    if option_row is None:
+        raise ValueError("option_row must not be None")
+
+    try:
+        qty = int(quantity)
+    except (TypeError, ValueError):
+        raise ValueError("quantity must be an integer")
+    if qty <= 0:
+        raise ValueError("quantity must be > 0")
+
+    # Retrieve trade history and derive current holdings for this contract
+    trades = get_trades_for_contract(cid)
+    holdings = derive_holdings_from_trade(trades)
+    net_qty = holdings.get(cid, 0)
+
+    if net_qty <= 0:
+        raise ValueError("No position available to sell for this contract")
+    if qty > net_qty:
+        raise ValueError("Cannot sell more contracts than currently held")
+
+    # Determine tradable price (same pricing rule used by buys)
+    price = get_current_option_price(option_row)
+
+    proceeds = price * qty * CONTRACT_MULTIPLIER
+
+    cash_before = get_cash()
+
+    # Write the sell trade event, then update cash
+    timestamp = datetime.now(timezone.utc).isoformat()
+    insert_trade(cid, qty, price, timestamp, "SELL")
+    adjust_cash(proceeds)
+
+    cash_after = get_cash()
+
+    return {
+        "contract_id": cid,
+        "side": "SELL",
+        "quantity": qty,
+        "price": price,
+        "multiplier": CONTRACT_MULTIPLIER,
+        "proceeds": proceeds,
+        "cash_before": cash_before,
+        "cash_after": cash_after,
+        "net_quantity_before": net_qty,
         "timestamp": timestamp,
     }
