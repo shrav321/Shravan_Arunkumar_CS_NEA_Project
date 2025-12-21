@@ -148,3 +148,108 @@ def get_position_metrics(trades: List[Tuple]) -> Dict[str, Any]:
         "total_bought_quantity": total_bought_qty,
         "average_cost": avg_cost,
     }
+
+
+
+from typing import Any, Dict, List, Tuple
+
+from portfolio import derive_holdings_from_trade, attach_contract_details, get_position_metrics
+
+# portfolio.py
+
+from typing import Any, Dict, List
+
+
+def _position_key(pos: Dict[str, Any]) -> tuple:
+    """
+    Build a sortable key for a position dict.
+    Sorting priority:
+    1) ticker (A-Z)
+    2) expiry (ISO date string, so lexical order matches chronological order)
+    3) strike (numeric)
+    4) type (C before P )
+    """
+    ticker = str(pos["ticker"])
+    expiry = str(pos["expiry"])
+    strike = float(pos["strike"])
+    opt_type = str(pos["type"])
+    return (ticker, expiry, strike, opt_type)
+
+
+def _insertion_sort_positions(positions: List[Dict[str, Any]]) -> None:
+    """
+    Sort positions in-place using insertion sort and _position_key.
+
+    """
+    for i in range(1, len(positions)):
+        current = positions[i]
+        current_key = _position_key(current)
+
+        j = i - 1
+
+    
+        while j >= 0 and _position_key(positions[j]) > current_key:
+            positions[j + 1] = positions[j]
+            j -= 1
+
+        positions[j + 1] = current
+
+
+
+def build_portfolio_view(all_trades: List[Tuple]) -> List[Dict[str, Any]]:
+    """
+    Build a complete portfolio view from a list of trade rows across all contracts.
+
+    Each trade row is expected in the format:
+    (trade_id, contract_id, quantity, price, timestamp, side)
+
+    Returns a list of position dicts. Each dict contains:
+    - contract_id, ticker, expiry, strike, type
+    - net_quantity
+    - total_bought_quantity
+    - average_cost
+    """
+    if all_trades is None:
+        raise ValueError("all_trades must not be None")
+
+    if len(all_trades) == 0:
+        return []
+
+    # 1) Derive net holdings across all contracts from trade history
+    holdings = derive_holdings_from_trade(all_trades)
+
+    # 2) Remove flat positions (net quantity == 0) from the view
+    nonzero_holdings: Dict[str, int] = {}
+    for contract_id, net_qty in holdings.items():
+        if int(net_qty) > 0:
+            nonzero_holdings[contract_id] = int(net_qty)
+
+    if len(nonzero_holdings) == 0:
+        return []
+
+    # 3) Attach contract metadata from CONTRACT table
+    enriched = attach_contract_details(nonzero_holdings)
+
+    # 4) Compute per-contract position metrics using only the trades for that contract
+    positions: List[Dict[str, Any]] = []
+    for contract_id in enriched.keys():
+        contract_trades = [t for t in all_trades if t[1] == contract_id]
+        metrics = get_position_metrics(contract_trades)
+
+        position = {
+            "contract_id": enriched[contract_id]["contract_id"],
+            "ticker": enriched[contract_id]["ticker"],
+            "expiry": enriched[contract_id]["expiry"],
+            "strike": enriched[contract_id]["strike"],
+            "type": enriched[contract_id]["type"],
+            "net_quantity": metrics["net_quantity"],
+            "total_bought_quantity": metrics["total_bought_quantity"],
+            "average_cost": metrics["average_cost"],
+        }
+        positions.append(position)
+
+   
+    _insertion_sort_positions(positions)
+
+
+    return positions
