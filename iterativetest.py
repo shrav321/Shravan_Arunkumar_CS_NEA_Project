@@ -1,19 +1,22 @@
-# test_attach_contract_details_test3_erroneous.py
+# test_get_position_metrics_test3_erroneous.py
 
-from db_init import init_db
-from portfolio import attach_contract_details
+from portfolio import get_position_metrics
 
 print("TEST 3: Erroneous case")
 
-init_db()
+cid = "MSFT_2026-01-16_300.00_C"
 
-holdings = {"MISSING_CONTRACT_ID": 1}
+trades = [
+    (1, cid, 1, 2.00, "t1", "BUY"),
+    (2, cid, 2, 2.50, "t2", "SELL"),
+]
 
 try:
-    _ = attach_contract_details(holdings)
-    print("FAIL: No error raised for missing contract_id")
+    _ = get_position_metrics(trades)
+    print("FAIL: No error raised for negative net quantity")
 except ValueError as e:
     print("PASS: Error caught as expected:", e)
 
 print()
+
 

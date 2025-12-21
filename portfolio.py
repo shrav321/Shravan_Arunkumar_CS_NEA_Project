@@ -75,3 +75,76 @@ def attach_contract_details(holdings: Dict[str, int]) -> Dict[str, Dict[str, Any
         }
 
     return enriched
+
+# portfolio.py
+
+
+
+def get_position_metrics(trades: List[Tuple]) -> Dict[str, Any]:
+    """
+    Compute position metrics from a list of trade rows for a single contract.
+
+    Each trade row is expected in the format:
+    (trade_id, contract_id, quantity, price, timestamp, side)
+
+    Cost basis rule used:
+    - average_cost is computed from BUY trades only
+    - SELL trades reduce net_quantity but do not change average_cost
+    - if net_quantity becomes 0, average_cost is set to None
+
+    Returns a dict containing:
+    - contract_id
+    - net_quantity
+    - total_bought_quantity
+    - average_cost
+    """
+    if trades is None:
+        raise ValueError("trades must not be None")
+    if len(trades) == 0:
+        raise ValueError("trades must contain at least one trade row")
+
+    contract_id = trades[0][1]
+
+    net_qty = 0
+    total_bought_qty = 0
+    total_bought_cost = 0.0
+
+    for row in trades:
+        row_contract_id = row[1]
+        if row_contract_id != contract_id:
+            raise ValueError("All trades must be for the same contract_id")
+
+        qty = int(row[2])
+        price = float(row[3])
+        side = str(row[5]).upper()
+
+        if qty <= 0:
+            raise ValueError("Trade quantity must be > 0")
+        if price <= 0:
+            raise ValueError("Trade price must be > 0")
+
+        if side == "BUY":
+            net_qty += qty
+            total_bought_qty += qty
+            total_bought_cost += qty * price
+        elif side == "SELL":
+            net_qty -= qty
+        else:
+            raise ValueError(f"Unknown trade side: {side}")
+
+    if net_qty < 0:
+        raise ValueError("Net quantity became negative - trade history is inconsistent")
+
+    if net_qty == 0:
+        avg_cost = None
+    else:
+        if total_bought_qty == 0:
+            raise ValueError("Position has net quantity but no BUY trades - inconsistent state")
+        avg_cost = total_bought_cost / total_bought_qty
+
+    return {
+        "contract_id": contract_id,
+        "net_quantity": net_qty,
+        "total_bought_quantity": total_bought_qty,
+        "average_cost": avg_cost,
+    }
