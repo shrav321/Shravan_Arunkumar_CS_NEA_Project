@@ -172,3 +172,91 @@ def execute_sell_from_portfolio(contract_id: str, quantity: int, option_row: Map
         "net_quantity_before": net_qty,
         "timestamp": timestamp,
     }
+
+# trades.py
+
+from datetime import datetime, timezone
+from typing import Dict, Any
+
+from db_init import get_trades_for_contract, insert_trade, adjust_cash
+from portfolio import derive_holdings_from_trade
+
+
+CONTRACT_MULTIPLIER = 100
+
+
+def execute_exercise_from_portfolio(
+    contract: Dict[str, Any],
+    underlying_spot: float,
+    current_date: str
+) -> Dict[str, Any]:
+    """
+    Exercise an option position if it is eligible.
+
+    contract must contain:
+    - contract_id
+    - expiry (ISO date string)
+    - strike
+    - type ('C' or 'P')
+
+    underlying_spot is the current underlying price.
+    current_date is an ISO date string used to validate expiry.
+
+    Returns a dict describing the exercise result.
+    """
+    if contract is None:
+        raise ValueError("contract must not be None")
+
+    required = ["contract_id", "expiry", "strike", "type"]
+    for key in required:
+        if key not in contract:
+            raise ValueError(f"contract missing required field: {key}")
+
+    contract_id = str(contract["contract_id"])
+    expiry = str(contract["expiry"])
+    strike = float(contract["strike"])
+    opt_type = str(contract["type"]).upper()
+
+    if opt_type not in ("C", "P"):
+        raise ValueError("option type must be 'C' or 'P'")
+
+    try:
+        spot = float(underlying_spot)
+    except (TypeError, ValueError):
+        raise ValueError("underlying_spot must be numeric")
+
+    if spot <= 0:
+        raise ValueError("underlying_spot must be > 0")
+
+    if current_date < expiry:
+        raise ValueError("option has not yet reached expiry")
+
+    trades = get_trades_for_contract(contract_id)
+    holdings = derive_holdings_from_trade(trades)
+    net_qty = holdings.get(contract_id, 0)
+
+    if net_qty <= 0:
+        raise ValueError("no open position to exercise")
+
+    if opt_type == "C":
+        intrinsic = max(spot - strike, 0.0)
+    else:
+        intrinsic = max(strike - spot, 0.0)
+
+    if intrinsic == 0.0:
+        raise ValueError("option is not in the money and cannot be exercised")
+
+    payoff = intrinsic * net_qty * CONTRACT_MULTIPLIER
+
+    timestamp = datetime.now(timezone.utc).isoformat()
+
+    insert_trade(contract_id, net_qty, intrinsic, timestamp, "SELL")
+    adjust_cash(payoff)
+
+    return {
+        "contract_id": contract_id,
+        "net_quantity_exercised": net_qty,
+        "intrinsic_value": intrinsic,
+        "payoff": payoff,
+        "timestamp": timestamp,
+    }
