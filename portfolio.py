@@ -308,3 +308,44 @@ def unrealised_pl_for_contract(position: Dict[str, Any], current_price: float, c
     pl_total = pl_per_share * net_qty * int(contract_multiplier)
 
     return float(pl_total)
+
+# portfolio.py
+
+
+
+from portfolio import build_portfolio_view, unrealised_pl_for_contract
+
+
+def build_portfolio_view_with_pl(
+    all_trades: List[Tuple],
+    current_prices: Dict[str, float],
+    contract_multiplier: int = 100
+) -> List[Dict[str, Any]]:
+    """
+    Extend the portfolio view by attaching unrealised P/L to each position.
+
+    all_trades: list of trade rows across all contracts
+    current_prices: dict mapping contract_id -> current premium (per share)
+    contract_multiplier: scaling factor for per-contract value
+
+    Returns the same list of position dicts as build_portfolio_view, plus:
+    - current_price
+    - unrealised_pl
+    """
+    if current_prices is None:
+        raise ValueError("current_prices must not be None")
+
+    positions = build_portfolio_view(all_trades)
+
+    for pos in positions:
+        cid = pos["contract_id"]
+
+        if cid not in current_prices:
+            raise ValueError(f"Missing current price for contract_id: {cid}")
+
+        cp = current_prices[cid]
+        pos["current_price"] = float(cp)
+        pos["unrealised_pl"] = unrealised_pl_for_contract(pos, cp, contract_multiplier)
+
+    return positions
+
