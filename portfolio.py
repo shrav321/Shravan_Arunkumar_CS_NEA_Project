@@ -253,3 +253,58 @@ def build_portfolio_view(all_trades: List[Tuple]) -> List[Dict[str, Any]]:
 
 
     return positions
+
+# portfolio.py
+
+from typing import Any, Dict
+
+
+def unrealised_pl_for_contract(position: Dict[str, Any], current_price: float, contract_multiplier: int = 100) -> float:
+    """
+    Compute unrealised P/L for a single position.
+
+    position must contain:
+    - net_quantity
+    - average_cost
+
+    current_price is the current tradable premium (per share).
+    contract_multiplier converts per-share premium to per-contract value.
+
+    Returns unrealised P/L as a float.
+    """
+    if position is None:
+        raise ValueError("position must not be None")
+
+    if "net_quantity" not in position:
+        raise ValueError("position must include 'net_quantity'")
+    if "average_cost" not in position:
+        raise ValueError("position must include 'average_cost'")
+
+    net_qty = int(position["net_quantity"])
+    avg_cost = position["average_cost"]
+
+    # Flat positions have no unrealised P/L.
+    if net_qty == 0:
+        return 0.0
+
+    if avg_cost is None:
+        raise ValueError("average_cost is None for a non-flat position")
+
+    try:
+        cp = float(current_price)
+    except (TypeError, ValueError):
+        raise ValueError("current_price must be a number")
+
+    if cp != cp:
+        raise ValueError("current_price must not be NaN")
+    if cp <= 0:
+        raise ValueError("current_price must be > 0")
+
+    ac = float(avg_cost)
+    if ac <= 0:
+        raise ValueError("average_cost must be > 0")
+
+    pl_per_share = cp - ac
+    pl_total = pl_per_share * net_qty * int(contract_multiplier)
+
+    return float(pl_total)

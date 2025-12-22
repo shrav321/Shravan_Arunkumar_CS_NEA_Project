@@ -1,27 +1,21 @@
-# test_build_portfolio_view_test3_erroneous.py
+# test_unrealised_pl_for_contract_test3_erroneous.py
 
-from db_init import init_db
-from portfolio import build_portfolio_view
+from portfolio import unrealised_pl_for_contract
 
-print("Test 3: Erroneous case - trade references missing contract metadata")
-print("To test that missing CONTRACT rows are detected and rejected.")
+print("Test 3: Erroneous case - average_cost None for non-flat position")
+print("To test that missing cost basis is rejected for a position with net_quantity > 0.")
 print()
 
-init_db()
-
-missing_cid = "MISSING_2026-01-16_100.00_C"
-all_trades = [
-    (1, missing_cid, 1, 2.00, "t1", "BUY"),
-]
+position = {
+    "net_quantity": 1,
+    "average_cost": None
+}
 
 try:
-    _ = build_portfolio_view(all_trades)
-    print("FAIL: No error raised for missing contract metadata")
+    _ = unrealised_pl_for_contract(position, current_price=3.20)
+    print("FAIL: No error raised for average_cost None")
 except ValueError as e:
     print("PASS: Error caught as expected:", e)
 
 print()
-
-
-
 
