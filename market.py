@@ -137,6 +137,72 @@ def get_underlying_spot(ticker: str) -> float:
 
     raise ValueError(f"No usable spot price found for ticker {ticker_clean}")
 
+# market.py
+
+import math
+from typing import List, Tuple
+
+from db_init import get_prices_for_ticker, insert_price_row
+import yfinance as yf
+
+
+TRADING_DAYS_PER_YEAR = 252
+
+
+def compute_historical_volatility(ticker: str) -> float:
+    """
+    Compute annualised historical volatility for a ticker using daily log returns.
+
+    Uses PRICE table as memoisation. Missing prices are fetched once from yfinance
+    and inserted using INSERT OR IGNORE.
+
+    Returns volatility as a float.
+    """
+    if ticker is None or str(ticker).strip() == "":
+        raise ValueError("ticker must be a non-empty string")
+
+    symbol = str(ticker).strip().upper()
+
+    prices: List[Tuple[str, float]] = get_prices_for_ticker(symbol)
+
+    if len(prices) < 2:
+        hist = yf.Ticker(symbol).history(period="1y")
+
+        if hist.empty:
+            raise ValueError("no historical price data available")
+
+        for date, row in hist.iterrows():
+            insert_price_row(symbol, date.strftime("%Y-%m-%d"), float(row["Close"]))
+
+        prices = get_prices_for_ticker(symbol)
+
+    if len(prices) < 2:
+        raise ValueError("insufficient data to compute volatility")
+
+    closes = [float(p[1]) for p in prices]
+
+    log_returns = []
+    for i in range(1, len(closes)):
+        prev = closes[i - 1]
+        curr = closes[i]
+
+        if prev <= 0 or curr <= 0:
+            raise ValueError("price data must be positive")
+
+        log_returns.append(math.log(curr / prev))
+
+    mean = sum(log_returns) / len(log_returns)
+
+    variance = 0.0
+    for r in log_returns:
+        variance += (r - mean) ** 2
+
+    variance /= len(log_returns)
+    daily_std = math.sqrt(variance)
+
+    annualised_vol = daily_std * math.sqrt(TRADING_DAYS_PER_YEAR)
+
+    return annualised_vol
 
 
 

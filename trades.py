@@ -260,3 +260,83 @@ def execute_exercise_from_portfolio(
         "payoff": payoff,
         "timestamp": timestamp,
     }
+
+# trades.py
+
+from datetime import datetime, timezone
+from typing import Dict, Any
+
+from db_init import get_trades_for_contract, insert_trade
+from portfolio import derive_holdings_from_trade
+
+
+def execute_expire_worthless_from_portfolio(
+    contract: Dict[str, Any],
+    underlying_spot: float,
+    current_date: str
+) -> Dict[str, Any]:
+    """
+    Expire an option position worthless at or after expiry.
+
+    The position is closed by inserting a terminal SELL trade
+    with price = 0.0 and no cash adjustment.
+    """
+    if contract is None:
+        raise ValueError("contract must not be None")
+
+    required = ["contract_id", "expiry", "strike", "type"]
+    for key in required:
+        if key not in contract:
+            raise ValueError(f"contract missing required field: {key}")
+
+    contract_id = str(contract["contract_id"]).strip()
+    expiry = str(contract["expiry"]).strip()
+    strike = float(contract["strike"])
+    opt_type = str(contract["type"]).upper()
+
+    if contract_id == "":
+        raise ValueError("contract_id must be non-empty")
+    if opt_type not in ("C", "P"):
+        raise ValueError("option type must be 'C' or 'P'")
+    if strike <= 0:
+        raise ValueError("strike must be > 0")
+
+    try:
+        spot = float(underlying_spot)
+    except (TypeError, ValueError):
+        raise ValueError("underlying_spot must be numeric")
+    if spot <= 0:
+        raise ValueError("underlying_spot must be > 0")
+
+    # Expiry eligibility
+    if current_date < expiry:
+        raise ValueError("option has not yet reached expiry")
+
+    # Reconstruct position
+    trades = get_trades_for_contract(contract_id)
+    holdings = derive_holdings_from_trade(trades)
+    net_qty = int(holdings.get(contract_id, 0))
+
+    if net_qty <= 0:
+        raise ValueError("no open position to expire")
+
+    # Check intrinsic value is zero
+    if opt_type == "C":
+        intrinsic = max(spot - strike, 0.0)
+    else:
+        intrinsic = max(strike - spot, 0.0)
+
+    if intrinsic != 0.0:
+        raise ValueError("option is in the money and should be exercised instead")
+
+    timestamp = datetime.now(timezone.utc).isoformat()
+
+    # Close the position with a terminal SELL at zero value
+    insert_trade(contract_id, net_qty, 0.0, timestamp, "SELL")
+
+    return {
+        "contract_id": contract_id,
+        "net_quantity_expired": net_qty,
+        "expired_worthless": True,
+        "timestamp": timestamp,
+    }
