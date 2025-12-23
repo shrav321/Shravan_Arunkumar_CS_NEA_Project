@@ -205,4 +205,117 @@ def compute_historical_volatility(ticker: str) -> float:
     return annualised_vol
 
 
+def _norm_cdf(x: float) -> float:
+    """
+    Standard normal cumulative distribution function
+    using the Abramowitz-Stegun 7.1.26 rational approximation.
+    Accurate to around 7 decimal places.
+    """
+    # Coefficients from Abramowitz & Stegun 7.1.26
+    a1 = 0.319381530
+    a2 = -0.356563782
+    a3 = 1.781477937
+    a4 = -1.821255978
+    a5 = 1.330274429
+    p  = 0.2316419
 
+    # Use symmetry: work with |x|, remember the sign
+    sign = 1
+    if x < 0:
+        sign = -1
+    x = abs(x)
+
+    # Transform x to t in (0,1]
+    t = 1.0 / (1.0 + p * x)
+
+    # Standard normal PDF at x
+    pdf = math.exp(-0.5 * x * x) / math.sqrt(2.0 * math.pi)
+
+    # Polynomial P(t) approximating the tail factor
+    poly = a1*t + a2*t*t + a3*t*t*t + a4*t*t*t*t + a5*t*t*t*t*t
+
+    # Approximate CDF for x >= 0
+    cdf = 1.0 - pdf * poly
+
+    # Reflect if original x was negative
+    return cdf if sign == 1 else 1.0 - cdf
+
+import math
+from datetime import datetime, timezone
+from typing import Dict, Any
+
+RISK_FREE_RATE_DEFAULT = 0.05  # 5% per annum
+
+
+def bs_price_yf(
+    option_row: Dict[str, Any],
+    spot: float,
+    sigma: float,
+    r: float = RISK_FREE_RATE_DEFAULT
+) -> float:
+    """
+    Compute Black-Scholes theoretical price for a European option.
+
+    option_row must include:
+    - strike (numeric)
+    - expiry (YYYY-MM-DD)
+    - type ('C' or 'P')
+
+    spot: underlying spot price (S)
+    sigma: annualised volatility 
+    r: risk-free rate 
+    """
+    if option_row is None:
+        raise ValueError("option_row must not be None")
+
+    for key in ("strike", "expiry", "type"):
+        if key not in option_row:
+            raise ValueError(f"option_row missing required field: {key}")
+
+    try:
+        S = float(spot)
+        K = float(option_row["strike"])
+        vol = float(sigma)
+        rate = float(r)
+    except (TypeError, ValueError):
+        raise ValueError("spot, strike, sigma, and r must be numeric")
+
+    if S <= 0:
+        raise ValueError("spot must be > 0")
+    if K <= 0:
+        raise ValueError("strike must be > 0")
+    if vol <= 0:
+        raise ValueError("sigma must be > 0")
+
+    opt_type = str(option_row["type"]).upper()
+    if opt_type not in ("C", "P"):
+        raise ValueError("option type must be 'C' or 'P'")
+
+    expiry_str = str(option_row["expiry"]).strip()
+    try:
+        expiry_dt = datetime.strptime(expiry_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except ValueError:
+        raise ValueError("expiry must be in YYYY-MM-DD format")
+
+    now = datetime.now(timezone.utc)
+    T_seconds = (expiry_dt - now).total_seconds()
+    T = T_seconds / (365.0 * 24.0 * 3600.0)
+
+    if T <= 0:
+        raise ValueError("time to expiry must be positive for Black-Scholes pricing")
+
+    sqrtT = math.sqrt(T)
+    d1 = (math.log(S / K) + (rate + 0.5 * vol * vol) * T) / (vol * sqrtT)
+    d2 = d1 - vol * sqrtT
+
+    discK = K * math.exp(-rate * T)
+
+    if opt_type == "C":
+        price = S * _norm_cdf(d1) - discK * _norm_cdf(d2)
+    else:
+        price = discK * _norm_cdf(-d2) - S * _norm_cdf(-d1)
+
+    if price < 0:
+        price = 0.0
+
+    return float(price)
