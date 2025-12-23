@@ -319,3 +319,45 @@ def bs_price_yf(
         price = 0.0
 
     return float(price)
+
+# market.py
+
+from typing import Dict, Any
+
+RISK_FREE_RATE_DEFAULT = 0.05
+
+
+def compute_mispricing_for_contract(
+    option_row: Dict[str, Any],
+    spot: float,
+    sigma: float,
+    r: float = RISK_FREE_RATE_DEFAULT
+) -> Dict[str, float]:
+    """
+    Compare observed market premium against theoretical Black-Scholes price.
+
+    Returns a dict with:
+    - market_price
+    - theoretical_price
+    - mispricing_abs (market - theoretical)
+    - mispricing_pct ((market - theoretical) / theoretical), 0 if theoretical is 0
+    """
+    if option_row is None:
+        raise ValueError("option_row must not be None")
+
+    market_price = get_current_option_price(option_row)
+    theoretical = bs_price_yf(option_row, spot=spot, sigma=sigma, r=r)
+
+    diff = market_price - theoretical
+
+    if theoretical > 0:
+        pct = diff / theoretical
+    else:
+        pct = 0.0
+
+    return {
+        "market_price": float(market_price),
+        "theoretical_price": float(theoretical),
+        "mispricing_abs": float(diff),
+        "mispricing_pct": float(pct),
+    }

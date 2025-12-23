@@ -1,14 +1,12 @@
-# test_bs_price_yf_test3_erroneous.py
+# test_compute_mispricing_for_contract_test3_erroneous.py
 
-from market import bs_price_yf
+from market import compute_mispricing_for_contract
 
-print("Test 3: Erroneous case - expired option rejected")
+print("Test 3: Erroneous case - missing option_row rejected")
 print("Type: Erroneous\n")
 
-option_row = {"strike": 100.0, "expiry": "2000-01-01", "type": "C"}
-
 try:
-    _ = bs_price_yf(option_row, spot=105.0, sigma=0.2, r=0.01)
+    _ = compute_mispricing_for_contract(None, spot=100.0, sigma=0.2)
     print("FAIL")
 except ValueError as e:
     print("PASS:", e)
