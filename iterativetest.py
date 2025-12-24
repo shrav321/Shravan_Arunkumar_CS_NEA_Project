@@ -1,15 +1,22 @@
-# test_compute_bs_greeks_for_contract_test3_erroneous.py
+# test_attach_greeks_to_portfolio_view_test3_erroneous_missing_sigma.py
 
-from portfolio import compute_bs_greeks_for_contract
+from portfolio import attach_greeks_to_portfolio_view
 
-print("Test 3: Erroneous case - expired contract rejected")
-print("Type: Erroneous\n")
+print("Test 3: Erroneous case - missing sigma raises a clear error")
+print("Type: Erroneous")
 
-contract = {"strike": 100.0, "expiry": "2000-01-01", "type": "C"}
+positions = [
+    {"contract_id": "D", "ticker": "TSLA", "expiry": "2030-12-31", "strike": 100.0, "type": "C", "net_quantity": 1},
+]
+
+spot_by_ticker = {"TSLA": 200.0}
+sigma_by_ticker = {}  # sigma deliberately missing for TSLA
 
 try:
-    _ = compute_bs_greeks_for_contract(contract, spot=105.0, sigma=0.2)
-    print("FAIL")
+    attach_greeks_to_portfolio_view(positions, spot_by_ticker, sigma_by_ticker)
+    raise AssertionError("Expected ValueError was not raised")
 except ValueError as e:
-    print("PASS:", e)
-print()
+    assert "Missing sigma for ticker" in str(e)
+    print(f"Caught error: {e}")
+
+print("Result: PASS")

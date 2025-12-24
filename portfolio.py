@@ -456,3 +456,92 @@ def compute_bs_greeks_for_contract(
         "vega": float(vega_annual),
         "theta": float(theta_per_day),
     }
+
+from typing import Any, Dict, List, Tuple
+
+CONTRACT_MULTIPLIER_DEFAULT = 100
+RISK_FREE_RATE_DEFAULT = 0.05
+
+
+from typing import Any, Dict, List, Tuple
+
+CONTRACT_MULTIPLIER_DEFAULT = 100
+RISK_FREE_RATE_DEFAULT = 0.05
+
+
+def attach_greeks_to_portfolio_view(
+    positions: List[Dict[str, Any]],
+    spot_by_ticker: Dict[str, float],
+    sigma_by_ticker: Dict[str, float],
+    r: float = RISK_FREE_RATE_DEFAULT,
+    contract_multiplier: int = CONTRACT_MULTIPLIER_DEFAULT
+) -> Tuple[List[Dict[str, Any]], Dict[str, float]]:
+    """
+    Attach Black-Scholes Greeks to each position and return portfolio totals.
+    """
+    if positions is None:
+        raise ValueError("positions must not be None")
+    if spot_by_ticker is None:
+        raise ValueError("spot_by_ticker must not be None")
+    if sigma_by_ticker is None:
+        raise ValueError("sigma_by_ticker must not be None")
+
+    totals = {"delta": 0.0, "gamma": 0.0, "vega": 0.0, "theta": 0.0}
+
+    for pos in positions:
+        if pos is None:
+            raise ValueError("positions must not contain None")
+
+        for k in ("ticker", "expiry", "strike", "type", "net_quantity"):
+            if k not in pos:
+                raise ValueError(f"position missing required field: {k}")
+
+        ticker = str(pos["ticker"]).strip().upper()
+        if ticker == "":
+            raise ValueError("ticker must be non-empty")
+
+        if ticker not in spot_by_ticker:
+            raise ValueError(f"Missing spot for ticker: {ticker}")
+        if ticker not in sigma_by_ticker:
+            raise ValueError(f"Missing sigma for ticker: {ticker}")
+
+        try:
+            spot = float(spot_by_ticker[ticker])
+            sigma = float(sigma_by_ticker[ticker])
+        except (TypeError, ValueError):
+            raise ValueError("spot and sigma must be numeric")
+
+        if spot <= 0:
+            raise ValueError("spot must be > 0")
+        if sigma <= 0:
+            raise ValueError("sigma must be > 0")
+
+        net_qty = int(pos["net_quantity"])
+        if net_qty <= 0:
+            raise ValueError("net_quantity must be > 0 for Greeks attachment")
+
+        contract = {
+            "strike": pos["strike"],
+            "expiry": pos["expiry"],
+            "type": pos["type"],
+        }
+
+        per_share = compute_bs_greeks_for_contract(contract, spot=spot, sigma=sigma, r=r)
+
+        scale = net_qty * int(contract_multiplier)
+        per_position = {
+            "delta": per_share["delta"] * scale,
+            "gamma": per_share["gamma"] * scale,
+            "vega": per_share["vega"] * scale,
+            "theta": per_share["theta"] * scale,
+        }
+
+        pos["greeks_per_share"] = per_share
+        pos["greeks_position"] = per_position
+
+        totals["delta"] += float(per_position["delta"])
+        totals["gamma"] += float(per_position["gamma"])
+        totals["vega"] += float(per_position["vega"])
+        totals["theta"] += float(per_position["theta"])
+
+    return positions, totals
