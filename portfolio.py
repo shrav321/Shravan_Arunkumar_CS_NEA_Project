@@ -349,3 +349,110 @@ def build_portfolio_view_with_pl(
 
     return positions
 
+# portfolio.py
+
+import math
+from datetime import datetime, timezone
+from typing import Dict, Any
+from market import _norm_cdf
+RISK_FREE_RATE_DEFAULT = 0.05
+
+
+
+
+
+def _norm_pdf(x: float) -> float:
+    return (1.0 / math.sqrt(2.0 * math.pi)) * math.exp(-0.5 * x * x)
+
+
+def compute_bs_greeks_for_contract(
+    contract: Dict[str, Any],
+    spot: float,
+    sigma: float,
+    r: float = RISK_FREE_RATE_DEFAULT
+) -> Dict[str, float]:
+    """
+    Compute Black-Scholes Greeks for a European option.
+
+    contract must include:
+    - strike (numeric)
+    - expiry (YYYY-MM-DD)
+    - type ('C' or 'P')
+
+    Returns:
+    - delta
+    - gamma
+    - vega
+    - theta (per day)
+    """
+    if contract is None:
+        raise ValueError("contract must not be None")
+
+    for key in ("strike", "expiry", "type"):
+        if key not in contract:
+            raise ValueError(f"contract missing required field: {key}")
+
+    try:
+        S = float(spot)
+        K = float(contract["strike"])
+        vol = float(sigma)
+        rate = float(r)
+    except (TypeError, ValueError):
+        raise ValueError("spot, strike, sigma, and r must be numeric")
+
+    if S <= 0:
+        raise ValueError("spot must be > 0")
+    if K <= 0:
+        raise ValueError("strike must be > 0")
+    if vol <= 0:
+        raise ValueError("sigma must be > 0")
+
+    opt_type = str(contract["type"]).upper()
+    if opt_type not in ("C", "P"):
+        raise ValueError("option type must be 'C' or 'P'")
+
+    expiry_str = str(contract["expiry"]).strip()
+    try:
+        expiry_dt = datetime.strptime(expiry_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except ValueError:
+        raise ValueError("expiry must be in YYYY-MM-DD format")
+
+    now = datetime.now(timezone.utc)
+    T_seconds = (expiry_dt - now).total_seconds()
+    T = T_seconds / (365.0 * 24.0 * 3600.0)
+
+    if T <= 0:
+        raise ValueError("time to expiry must be positive for Greeks")
+
+    sqrtT = math.sqrt(T)
+    d1 = (math.log(S / K) + (rate + 0.5 * vol * vol) * T) / (vol * sqrtT)
+    d2 = d1 - vol * sqrtT
+
+    Nd1 = _norm_cdf(d1)
+    Nd2 = _norm_cdf(d2)
+    pdf_d1 = _norm_pdf(d1)
+
+    if opt_type == "C":
+        delta = Nd1
+        theta_annual = (
+            -(S * pdf_d1 * vol) / (2.0 * sqrtT)
+            - rate * K * math.exp(-rate * T) * Nd2
+        )
+    else:
+        delta = Nd1 - 1.0
+        theta_annual = (
+            -(S * pdf_d1 * vol) / (2.0 * sqrtT)
+            + rate * K * math.exp(-rate * T) * _norm_cdf(-d2)
+        )
+
+    gamma = pdf_d1 / (S * vol * sqrtT)
+    vega_annual = S * pdf_d1 * sqrtT
+
+    theta_per_day = theta_annual / 365.0
+
+    return {
+        "delta": float(delta),
+        "gamma": float(gamma),
+        "vega": float(vega_annual),
+        "theta": float(theta_per_day),
+    }
