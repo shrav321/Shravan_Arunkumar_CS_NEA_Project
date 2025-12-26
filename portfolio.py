@@ -459,11 +459,10 @@ def compute_bs_greeks_for_contract(
 
 from typing import Any, Dict, List, Tuple
 
-CONTRACT_MULTIPLIER_DEFAULT = 100
-RISK_FREE_RATE_DEFAULT = 0.05
 
 
-from typing import Any, Dict, List, Tuple
+
+
 
 CONTRACT_MULTIPLIER_DEFAULT = 100
 RISK_FREE_RATE_DEFAULT = 0.05
