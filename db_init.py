@@ -1,10 +1,15 @@
+import os
 import sqlite3
 
-DB_PATH = "options.db"
+DB_PATH = os.path.join(os.path.dirname(__file__), "options.db")
 
 
 def get_connection():
     return sqlite3.connect(DB_PATH)
+
+def get_db_path() -> str:
+    return DB_PATH
+
 def init_db():
     conn = get_connection()
     cur = conn.cursor()
