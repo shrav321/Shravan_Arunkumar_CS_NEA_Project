@@ -71,6 +71,19 @@ def list_tables():
     conn.close()
     return tables
 
+def get_all_trades():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT trade_id, contract_id, quantity, price, timestamp, side
+        FROM TRADE
+        ORDER BY timestamp ASC;
+    """)
+    rows = cur.fetchall()
+    conn.close()
+    return rows
+
+
 def insert_contract(contract_id, ticker, expiry, strike, ctype):
     conn = get_connection()
     cur = conn.cursor()
