@@ -532,3 +532,100 @@ def attach_greeks_to_portfolio_view(
         totals["theta"] += float(per_position["theta"])
 
     return positions, totals
+
+
+from market import (
+    get_underlying_spot,
+    compute_historical_volatility,
+    bs_price_yf,
+    compute_mispricing_for_contract
+)
+from portfolio import (
+    build_portfolio_view,
+    compute_bs_greeks_for_contract
+)
+
+
+
+
+from typing import Any, Dict, List, Tuple
+
+import market
+from portfolio import build_portfolio_view, compute_bs_greeks_for_contract
+
+
+
+
+from typing import Any, Dict, List, Tuple, Optional
+
+
+def build_portfolio_view_with_risk_metrics(
+    all_trades: List[Tuple],
+    current_prices: Dict[str, float],
+    spot_by_ticker: Optional[Dict[str, float]] = None,
+    sigma_by_ticker: Optional[Dict[str, float]] = None,
+    r: float = 0.05
+) -> List[Dict[str, Any]]:
+    """
+    Build a portfolio view enriched with theoretical pricing, mispricing, and Greeks.
+
+    Market premiums are injected via current_prices to keep portfolio logic deterministic.
+    Spot and sigma can be injected for deterministic testing; otherwise they are fetched via market.py.
+    """
+    positions = build_portfolio_view(all_trades)
+    if not positions:
+        return []
+
+    if current_prices is None:
+        raise ValueError("current_prices must not be None")
+
+    by_ticker: Dict[str, List[Dict[str, Any]]] = {}
+    for pos in positions:
+        by_ticker.setdefault(pos["ticker"], []).append(pos)
+
+    for ticker, ticker_positions in by_ticker.items():
+        if spot_by_ticker is not None and ticker in spot_by_ticker:
+            spot = float(spot_by_ticker[ticker])
+        else:
+            spot = float(market.get_underlying_spot(ticker))
+
+        if sigma_by_ticker is not None and ticker in sigma_by_ticker:
+            sigma = float(sigma_by_ticker[ticker])
+        else:
+            sigma = float(market.compute_historical_volatility(ticker))
+
+        for pos in ticker_positions:
+            cid = pos["contract_id"]
+            if cid not in current_prices:
+                raise ValueError(f"Missing current price for contract_id: {cid}")
+
+            market_price = float(current_prices[cid])
+
+            contract_view = {
+                "ticker": pos["ticker"],
+                "expiry": pos["expiry"],
+                "strike": pos["strike"],
+                "type": pos["type"],
+            }
+
+            theoretical = market.bs_price_yf(contract_view, spot=spot, sigma=sigma, r=r)
+
+            diff = market_price - theoretical
+            pct = diff / theoretical if theoretical > 0 else 0.0
+
+            greeks = compute_bs_greeks_for_contract(contract_view, spot=spot, sigma=sigma, r=r)
+
+            pos["spot"] = spot
+            pos["volatility"] = sigma
+
+            pos["market_price"] = market_price
+            pos["theoretical_price"] = float(theoretical)
+            pos["mispricing_abs"] = float(diff)
+            pos["mispricing_pct"] = float(pct)
+
+            pos["delta"] = greeks["delta"]
+            pos["gamma"] = greeks["gamma"]
+            pos["vega"] = greeks["vega"]
+            pos["theta"] = greeks["theta"]
+
+    return positions

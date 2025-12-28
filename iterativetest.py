@@ -1,28 +1,28 @@
-# test_fetch_options_by_ticker_and_type_test3_erroneous_bad_type.py
+# test_build_portfolio_view_with_risk_metrics_test3_erroneous.py
 
-from market import fetch_options_by_ticker_and_type
+from db_init import init_db, set_cash, insert_contract, insert_trade
+import portfolio
 
+init_db()
+set_cash(0.0)
 
-class _Ticker:
-    def __init__(self):
-        self.options = ["2030-01-01"]
+cid = "MSFT_2030-01-01_100.00_C"
+insert_contract(cid, "MSFT", "2030-01-01", 100.0, "C")
+insert_trade(cid, 1, 2.0, "2025-01-01T00:00:00+00:00", "BUY")
 
-    def option_chain(self, expiry):
-        return None
-
-
-def _provider(_symbol):
-    return _Ticker()
-
-
-print("Test 3: Erroneous case - invalid option type rejected")
-print("Type: Erroneous")
+all_trades = [
+    (1, cid, 1, 2.0, "2025-01-01T00:00:00+00:00", "BUY")
+]
 
 try:
-    fetch_options_by_ticker_and_type("AAPL", "X", ticker_provider=_provider)
-    raise AssertionError("Expected ValueError was not raised")
+    portfolio.build_portfolio_view_with_risk_metrics(
+        all_trades,
+        current_prices={},  # missing cid
+        spot_by_ticker={"MSFT": 120.0},
+        sigma_by_ticker={"MSFT": 0.20}
+    )
+    raise AssertionError("Expected ValueError due to missing current price was not raised.")
 except ValueError as e:
-    msg = str(e).lower()
-    assert "option_type" in msg or "must be" in msg
+    assert "Missing current price for contract_id" in str(e)
 
-print("Result: PASS")
+print("PASS: Missing current price triggers a clear ValueError.")
