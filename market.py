@@ -60,7 +60,7 @@ def ensure_contract_exists(contract_id: str, ticker: str, expiry: str, strike: f
     
     insert_contract(contract_id, ticker_clean, expiry_clean, strike_val, side)
 
-# market.py
+
 
 from typing import Any, Mapping
 
@@ -94,8 +94,6 @@ def get_current_option_price(option_row: Mapping[str, Any]) -> float:
 
     raise ValueError("No usable option price found (ask and lastPrice missing or non-positive).")
 
-
-# market.py
 
 import yfinance as yf
 
@@ -137,7 +135,6 @@ def get_underlying_spot(ticker: str) -> float:
 
     raise ValueError(f"No usable spot price found for ticker {ticker_clean}")
 
-# market.py
 
 import math
 from typing import List, Tuple
@@ -240,7 +237,7 @@ def _norm_cdf(x: float) -> float:
     # Reflect if original x was negative
     return cdf if sign == 1 else 1.0 - cdf
 
-import math
+
 from datetime import datetime, timezone
 from typing import Dict, Any
 
@@ -320,11 +317,9 @@ def bs_price_yf(
 
     return float(price)
 
-# market.py
 
 from typing import Dict, Any
 
-RISK_FREE_RATE_DEFAULT = 0.05
 
 
 def compute_mispricing_for_contract(
@@ -361,3 +356,79 @@ def compute_mispricing_for_contract(
         "mispricing_abs": float(diff),
         "mispricing_pct": float(pct),
     }
+
+from typing import Any, Callable, Dict, List, Optional
+
+
+
+def _normalise_option_type(option_type: str) -> str:
+    t = str(option_type).strip().upper()
+    if t in ("C", "CALL", "CALLS"):
+        return "C"
+    if t in ("P", "PUT", "PUTS"):
+        return "P"
+    raise ValueError("option_type must be 'C' or 'P'")
+
+
+def _rows_from_chain_table(table: Any) -> List[Dict[str, Any]]:
+    """
+    Convert a yfinance option chain table into a list of plain dict rows.
+    Supports DataFrame-like objects with to_dict('records') and also plain lists. 
+    """
+    if table is None:
+        return []
+
+    to_dict = getattr(table, "to_dict", None)
+    if callable(to_dict):
+        return list(table.to_dict("records"))
+
+    if isinstance(table, list):
+        out: List[Dict[str, Any]] = []
+        for item in table:
+            if isinstance(item, dict):
+                out.append(dict(item))
+            else:
+                raise ValueError("option chain rows must be dict-like")
+        return out
+
+    raise ValueError("Unsupported option chain table type")
+
+
+
+def fetch_options_by_ticker_and_type(
+    ticker: str,
+    option_type: str,
+    ticker_provider: Optional[Callable[[str], Any]] = None
+) -> List[Dict[str, Any]]:
+    if ticker is None or str(ticker).strip() == "":
+        raise ValueError("ticker must be a non-empty string")
+
+    symbol = str(ticker).strip().upper()
+    opt_type = _normalise_option_type(option_type)
+
+    provider = ticker_provider if ticker_provider is not None else yf.Ticker
+    tk = provider(symbol)
+
+    expiries = getattr(tk, "options", None)
+    if expiries is None or len(expiries) == 0:
+        raise ValueError("no option expiries available for ticker")
+
+    results: List[Dict[str, Any]] = []
+
+    for exp in expiries:
+        chain = tk.option_chain(exp)
+        table = chain.calls if opt_type == "C" else chain.puts
+        rows = _rows_from_chain_table(table)
+
+        for row in rows:
+            normalised = dict(row)
+            normalised["ticker"] = symbol
+            normalised["expiry"] = str(exp)
+            normalised["type"] = opt_type
+
+            if "strike" not in normalised:
+                raise ValueError("option chain row missing strike")
+
+            results.append(normalised)
+
+    return results

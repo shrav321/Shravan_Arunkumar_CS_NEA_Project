@@ -1,22 +1,28 @@
-# test_attach_greeks_to_portfolio_view_test3_erroneous_missing_sigma.py
+# test_fetch_options_by_ticker_and_type_test3_erroneous_bad_type.py
 
-from portfolio import attach_greeks_to_portfolio_view
+from market import fetch_options_by_ticker_and_type
 
-print("Test 3: Erroneous case - missing sigma raises a clear error")
+
+class _Ticker:
+    def __init__(self):
+        self.options = ["2030-01-01"]
+
+    def option_chain(self, expiry):
+        return None
+
+
+def _provider(_symbol):
+    return _Ticker()
+
+
+print("Test 3: Erroneous case - invalid option type rejected")
 print("Type: Erroneous")
 
-positions = [
-    {"contract_id": "D", "ticker": "TSLA", "expiry": "2030-12-31", "strike": 100.0, "type": "C", "net_quantity": 1},
-]
-
-spot_by_ticker = {"TSLA": 200.0}
-sigma_by_ticker = {}  # sigma deliberately missing for TSLA
-
 try:
-    attach_greeks_to_portfolio_view(positions, spot_by_ticker, sigma_by_ticker)
+    fetch_options_by_ticker_and_type("AAPL", "X", ticker_provider=_provider)
     raise AssertionError("Expected ValueError was not raised")
 except ValueError as e:
-    assert "Missing sigma for ticker" in str(e)
-    print(f"Caught error: {e}")
+    msg = str(e).lower()
+    assert "option_type" in msg or "must be" in msg
 
 print("Result: PASS")

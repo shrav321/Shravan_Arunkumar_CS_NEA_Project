@@ -1,6 +1,6 @@
 # portfolio.py
 
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Any
 
 
 def derive_holdings_from_trade(trades: List[Tuple]) -> Dict[str, int]:
@@ -31,9 +31,8 @@ def derive_holdings_from_trade(trades: List[Tuple]) -> Dict[str, int]:
 
     return holdings
 
-# portfolio.py
 
-from typing import Dict, Tuple, Any
+
 
 from db_init import get_contract
 
@@ -76,7 +75,7 @@ def attach_contract_details(holdings: Dict[str, int]) -> Dict[str, Dict[str, Any
 
     return enriched
 
-# portfolio.py
+
 
 
 
@@ -151,13 +150,9 @@ def get_position_metrics(trades: List[Tuple]) -> Dict[str, Any]:
 
 
 
-from typing import Any, Dict, List, Tuple
+
 
 from portfolio import derive_holdings_from_trade, attach_contract_details, get_position_metrics
-
-# portfolio.py
-
-from typing import Any, Dict, List
 
 
 def _position_key(pos: Dict[str, Any]) -> tuple:
@@ -254,9 +249,7 @@ def build_portfolio_view(all_trades: List[Tuple]) -> List[Dict[str, Any]]:
 
     return positions
 
-# portfolio.py
 
-from typing import Any, Dict
 
 
 def unrealised_pl_for_contract(position: Dict[str, Any], current_price: float, contract_multiplier: int = 100) -> float:
@@ -349,7 +342,7 @@ def build_portfolio_view_with_pl(
 
     return positions
 
-# portfolio.py
+
 
 import math
 from datetime import datetime, timezone
@@ -456,11 +449,6 @@ def compute_bs_greeks_for_contract(
         "vega": float(vega_annual),
         "theta": float(theta_per_day),
     }
-
-from typing import Any, Dict, List, Tuple
-
-
-
 
 
 

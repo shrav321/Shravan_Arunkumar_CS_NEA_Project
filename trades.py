@@ -173,7 +173,6 @@ def execute_sell_from_portfolio(contract_id: str, quantity: int, option_row: Map
         "timestamp": timestamp,
     }
 
-# trades.py
 
 from datetime import datetime, timezone
 from typing import Dict, Any
@@ -261,13 +260,6 @@ def execute_exercise_from_portfolio(
         "timestamp": timestamp,
     }
 
-# trades.py
-
-from datetime import datetime, timezone
-from typing import Dict, Any
-
-from db_init import get_trades_for_contract, insert_trade
-from portfolio import derive_holdings_from_trade
 
 
 def execute_expire_worthless_from_portfolio(
