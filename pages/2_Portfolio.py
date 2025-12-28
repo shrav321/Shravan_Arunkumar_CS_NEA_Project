@@ -2,17 +2,27 @@
 
 import streamlit as st
 from datetime import date
+from typing import Dict, Any, List
 
 from db_init import init_db, get_cash, get_all_trades, get_trades_for_contract
-from portfolio import build_portfolio_view, unrealised_pl_for_contract
+from portfolio import (
+    build_portfolio_view,
+    unrealised_pl_for_contract,
+    build_portfolio_view_with_risk_metrics,
+)
 from trades import execute_exercise_from_portfolio, execute_expire_worthless_from_portfolio
 
 
 def _rerun() -> None:
-    if hasattr(st, "rerun"):
-        st.rerun()
-    if hasattr(st, "experimental_rerun"):
-        st.experimental_rerun()
+    fn = getattr(st, "rerun", None)
+    if callable(fn):
+        fn()
+        return
+    fn = getattr(st, "experimental_rerun", None)
+    if callable(fn):
+        fn()
+        return
+    raise RuntimeError("No rerun function available in this Streamlit version")
 
 
 def _read_cash_safely() -> float:
@@ -27,7 +37,9 @@ st.set_page_config(page_title="Portfolio", layout="wide")
 init_db()
 
 st.title("Portfolio")
-st.caption("Positions are reconstructed from the trade ledger and resolved at expiry via explicit lifecycle actions.")
+st.caption(
+    "Positions are reconstructed from the trade ledger. Lifecycle resolution is recorded as explicit trade events."
+)
 
 # Sidebar: account + reload
 with st.sidebar:
@@ -36,13 +48,14 @@ with st.sidebar:
     if st.button("Reload"):
         _rerun()
 
-# Load trades and reconstruct positions
+# Load trades
 try:
     all_trades = get_all_trades()
 except Exception as e:
     st.error(str(e))
     st.stop()
 
+# Cycle 2 baseline: build positions view
 positions = build_portfolio_view(all_trades)
 
 st.subheader("Open positions")
@@ -91,17 +104,18 @@ col_left, col_right = st.columns(2)
 with col_left:
     st.subheader("Unrealised P/L")
 
-    current_price = st.number_input(
-        "Current option premium",
+    current_price_pl = st.number_input(
+        "Current option premium (selected contract)",
         min_value=0.0,
         value=0.0,
         step=0.5,
         format="%.2f",
+        key="current_price_pl_selected",
     )
 
     if st.button("Compute P/L for selected"):
         try:
-            pl = unrealised_pl_for_contract(selected_position, float(current_price))
+            pl = unrealised_pl_for_contract(selected_position, float(current_price_pl))
             st.success(f"Unrealised P/L (selected): {pl:.2f}")
         except Exception as e:
             st.error(str(e))
@@ -113,15 +127,15 @@ with col_right:
     st.subheader("Lifecycle resolution")
 
     current_date = st.date_input("Current date (YYYY-MM-DD)", value=date.today())
-    spot = st.number_input(
-        "Underlying spot",
+    spot_lifecycle = st.number_input(
+        "Underlying spot (for lifecycle actions)",
         min_value=0.0,
         value=0.0,
         step=0.5,
         format="%.2f",
+        key="spot_lifecycle",
     )
 
-    # Build minimal contract dict expected by lifecycle actions
     contract = {
         "contract_id": selected_position["contract_id"],
         "expiry": selected_position["expiry"],
@@ -136,7 +150,7 @@ with col_right:
             try:
                 res = execute_exercise_from_portfolio(
                     contract=contract,
-                    underlying_spot=float(spot),
+                    underlying_spot=float(spot_lifecycle),
                     current_date=str(current_date),
                 )
                 st.success("Exercise recorded.")
@@ -150,7 +164,7 @@ with col_right:
             try:
                 res = execute_expire_worthless_from_portfolio(
                     contract=contract,
-                    underlying_spot=float(spot),
+                    underlying_spot=float(spot_lifecycle),
                     current_date=str(current_date),
                 )
                 st.success("Worthless expiry recorded.")
@@ -158,6 +172,157 @@ with col_right:
                 _rerun()
             except Exception as e:
                 st.error(str(e))
+
+st.divider()
+
+# -----------------------------
+# Cycle 3: Risk metrics prototype
+# -----------------------------
+st.subheader("Risk metrics (Cycle 3 prototype)")
+st.caption(
+    "Market premiums are supplied explicitly per contract. Theoretical price, mispricing, and Greeks are derived from the pricing model."
+)
+
+# Session state: premiums per contract
+if "premium_inputs" not in st.session_state:
+    st.session_state.premium_inputs = {}
+
+for cid in contract_ids:
+    if cid not in st.session_state.premium_inputs:
+        st.session_state.premium_inputs[cid] = 0.0
+
+# Session state: optional manual spot and vol per ticker
+tickers = sorted({p["ticker"] for p in positions})
+
+if "spot_inputs" not in st.session_state:
+    st.session_state.spot_inputs = {}
+if "vol_inputs" not in st.session_state:
+    st.session_state.vol_inputs = {}
+
+for tkr in tickers:
+    if tkr not in st.session_state.spot_inputs:
+        st.session_state.spot_inputs[tkr] = 0.0
+    if tkr not in st.session_state.vol_inputs:
+        st.session_state.vol_inputs[tkr] = 0.0
+
+mode_col1, mode_col2 = st.columns([1, 1])
+with mode_col1:
+    use_live_market_inputs = st.checkbox(
+        "Use live spot and volatility",
+        value=True,
+        help="When enabled, spot and volatility are fetched from the market layer. When disabled, manual inputs are used.",
+    )
+
+with mode_col2:
+    run_risk = st.button("Compute risk metrics")
+
+with st.expander("Enter current premiums for open positions", expanded=True):
+    st.write("These premiums are used as the market price for mispricing calculations.")
+    for cid in contract_ids:
+        st.number_input(
+            label=cid,
+            min_value=0.0,
+            step=0.1,
+            format="%.4f",
+            key=f"prem_{cid}",
+            value=float(st.session_state.premium_inputs[cid]),
+        )
+        st.session_state.premium_inputs[cid] = float(st.session_state[f"prem_{cid}"])
+
+if not use_live_market_inputs:
+    with st.expander("Manual spot and volatility (optional)", expanded=True):
+        st.write("Spot is in currency units. Volatility is annualised, such as 0.20 for 20%.")
+        for tkr in tickers:
+            c1, c2 = st.columns(2)
+            with c1:
+                st.number_input(
+                    label=f"{tkr} spot",
+                    min_value=0.0,
+                    step=1.0,
+                    format="%.2f",
+                    key=f"spot_{tkr}",
+                    value=float(st.session_state.spot_inputs[tkr]),
+                )
+                st.session_state.spot_inputs[tkr] = float(st.session_state[f"spot_{tkr}"])
+            with c2:
+                st.number_input(
+                    label=f"{tkr} volatility",
+                    min_value=0.0,
+                    step=0.01,
+                    format="%.4f",
+                    key=f"vol_{tkr}",
+                    value=float(st.session_state.vol_inputs[tkr]),
+                )
+                st.session_state.vol_inputs[tkr] = float(st.session_state[f"vol_{tkr}"])
+
+risk_positions: List[Dict[str, Any]] = []
+
+if run_risk:
+    try:
+        current_prices: Dict[str, float] = {
+            cid: float(st.session_state.premium_inputs[cid]) for cid in contract_ids
+        }
+
+        spot_by_ticker = None
+        sigma_by_ticker = None
+
+        if not use_live_market_inputs:
+            spot_by_ticker = {t: float(st.session_state.spot_inputs[t]) for t in tickers}
+            sigma_by_ticker = {t: float(st.session_state.vol_inputs[t]) for t in tickers}
+
+        risk_positions = build_portfolio_view_with_risk_metrics(
+            all_trades=all_trades,
+            current_prices=current_prices,
+            spot_by_ticker=spot_by_ticker,
+            sigma_by_ticker=sigma_by_ticker,
+        )
+
+        st.success("Risk metrics computed.")
+    except Exception as e:
+        st.error(str(e))
+
+if risk_positions:
+    st.dataframe(
+        [
+            {
+                "contract_id": p["contract_id"],
+                "ticker": p["ticker"],
+                "expiry": p["expiry"],
+                "strike": p["strike"],
+                "type": p["type"],
+                "net_quantity": p["net_quantity"],
+                "market_price": round(float(p["market_price"]), 6),
+                "theoretical_price": round(float(p["theoretical_price"]), 6),
+                "mispricing_abs": round(float(p["mispricing_abs"]), 6),
+                "mispricing_pct": round(float(p["mispricing_pct"]), 6),
+                "delta": round(float(p["delta"]), 6),
+                "gamma": round(float(p["gamma"]), 6),
+                "vega": round(float(p["vega"]), 6),
+                "theta": round(float(p["theta"]), 6),
+                "spot": round(float(p["spot"]), 6),
+                "volatility": round(float(p["volatility"]), 6),
+            }
+            for p in risk_positions
+        ],
+        use_container_width=True,
+    )
+
+with st.expander("Greeks explained", expanded=False):
+    st.markdown(
+        """
+**Delta (Δ)**  
+Approximate change in option premium for a 1 unit move in the underlying. Calls typically have positive delta; puts typically have negative delta.
+
+**Gamma (Γ)**  
+Rate of change of delta as the underlying moves. Higher gamma means delta changes faster, which increases curvature risk.
+
+**Vega (V)**  
+Approximate change in option premium for a 1.00 change in volatility (in this implementation, vega is per 1.0 volatility unit). Higher vega means the option price is more sensitive to volatility shifts.
+
+**Theta (Θ)**  
+Time decay. This value is reported per day. Negative theta means the option tends to lose value as expiry approaches, holding other inputs fixed.
+        """
+    )
 
 st.divider()
 
