@@ -1,16 +1,22 @@
-# test_build_model_inputs_test3_erroneous_invalid_ctx.py
+# test_render_findings_test3_erroneous_missing_key.py
 
-from analysis import Build_Model_Inputs
+from analysis import Render_Findings
 
-ctx = {
-    "valid": False,
-    "ticker": "AAPL",
-    "expiry": "2030-01-01",
-    "closes": [100.0, 101.0, 102.0],
+ctx = {"expiry": "2030-01-01", "type": "C", "strike": 100.0}
+inputs = {"mu": 0.1, "sigma": 0.2, "r": 0.05, "T_years": 1.0, "steps": 252, "N": 1000, "seed": 42}
+
+metrics = {
+    "mc_mean": 1.23,
+    "mc_median": 1.10,
+    "q05": 0.10,
+    "q95": 3.40,
+    "p_itm": 0.62,
+    "premium_ref": 0.50,
+    "count": 1000,
 }
 
 try:
-    Build_Model_Inputs(ctx)
+    Render_Findings(ctx, inputs, metrics)
     raise AssertionError("Expected ValueError was not raised")
 except ValueError:
     pass

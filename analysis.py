@@ -262,7 +262,6 @@ def Derive_Metrics(ctx: Dict[str, Any], inputs: Dict[str, Any], sim: Dict[str, A
         "count": int(count),
     }
 
-from analysis import Build_Model_Inputs, Run_Monte_Carlo, Derive_Metrics
 
 def Run_Analysis_Pipeline(ctx: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -283,3 +282,71 @@ def Run_Analysis_Pipeline(ctx: Dict[str, Any]) -> Dict[str, Any]:
         "sim": sim,
         "metrics": metrics,
     }
+
+
+
+def Render_Findings(ctx: Dict[str, Any], inputs: Dict[str, Any], metrics: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Prepares user suggestions ready for streamlit
+    """
+    if ctx is None or inputs is None or metrics is None:
+        raise ValueError("ctx, inputs, and metrics must not be None")
+
+    required = ["mc_mean", "mc_median", "q05", "q95", "p_itm", "p_netprofit", "premium_ref", "count"]
+    for k in required:
+        if k not in metrics:
+            raise ValueError(f"metrics missing required field: {k}")
+
+    mc_mean = float(metrics["mc_mean"])
+    mc_median = float(metrics["mc_median"])
+    q05 = float(metrics["q05"])
+    q95 = float(metrics["q95"])
+    p_itm = float(metrics["p_itm"])
+    p_netprofit = float(metrics["p_netprofit"])
+    premium_ref = float(metrics["premium_ref"])
+    count = int(metrics["count"])
+
+    if count < 1:
+        raise ValueError("metrics['count'] must be >= 1")
+
+    expiry = ctx.get("expiry")
+    opt_type = str(ctx.get("type", "")).upper()
+    strike = ctx.get("strike")
+
+    summary_lines: List[str] = []
+    summary_lines.append(f"Simulations: {count}")
+    if expiry is not None:
+        summary_lines.append(f"Expiry: {expiry}")
+    if opt_type in ("C", "P") and strike is not None:
+        label = "Call" if opt_type == "C" else "Put"
+        summary_lines.append(f"Contract: {label}, Strike {float(strike):.2f}")
+
+    summary_lines.append(f"Mean discounted payoff: {mc_mean:.4f}")
+    summary_lines.append(f"Median discounted payoff: {mc_median:.4f}")
+    summary_lines.append(f"5th to 95th percentile range: {q05:.4f} to {q95:.4f}")
+    summary_lines.append(f"Probability ITM at expiry: {p_itm:.4f}")
+    summary_lines.append(f"Probability payoff exceeds premium: {p_netprofit:.4f}")
+
+    flags: List[str] = []
+    if p_netprofit >= 0.5:
+        flags.append("Net profit probability is at least 0.5")
+    if q95 <= premium_ref:
+        flags.append("Even optimistic outcomes may not clear the premium")
+    if q05 > premium_ref:
+        flags.append("Downside outcomes still clear the premium")
+
+    return {
+        "summary_lines": summary_lines,
+        "flags": flags,
+        "numbers": {
+            "mc_mean": mc_mean,
+            "mc_median": mc_median,
+            "q05": q05,
+            "q95": q95,
+            "p_itm": p_itm,
+            "p_netprofit": p_netprofit,
+            "premium_ref": premium_ref,
+            "count": count,
+        },
+    }
+
