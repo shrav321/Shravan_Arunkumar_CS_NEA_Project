@@ -350,3 +350,78 @@ def Render_Findings(ctx: Dict[str, Any], inputs: Dict[str, Any], metrics: Dict[s
         },
     }
 
+def Visualise_Results(sim: Dict[str, Any], max_paths: int = 30, bins: int = 30) -> Dict[str, Any]:
+    """
+      Returns:
+    - paths: list of paths (each path is a list of floats)
+    - payoff_hist: dict with 'bin_edges' and 'counts'
+    """
+    if sim is None:
+        raise ValueError("sim must not be None")
+
+    if "paths_subset" not in sim:
+        raise ValueError("sim missing required field: paths_subset")
+    if "discounted_payoffs" not in sim:
+        raise ValueError("sim missing required field: discounted_payoffs")
+
+    paths_subset = sim["paths_subset"]
+    payoffs = sim["discounted_payoffs"]
+
+    if not isinstance(paths_subset, list):
+        raise ValueError("paths_subset must be a list")
+    if not isinstance(payoffs, list) or len(payoffs) == 0:
+        raise ValueError("discounted_payoffs must be a non-empty list")
+
+    try:
+        mp = int(max_paths)
+        nb = int(bins)
+    except (TypeError, ValueError):
+        raise ValueError("max_paths and bins must be integers")
+
+    if mp < 1:
+        raise ValueError("max_paths must be >= 1")
+    if nb < 2:
+        raise ValueError("bins must be >= 2")
+
+    # Limit paths for plotting
+    paths_out: List[List[float]] = []
+    for p in paths_subset[:mp]:
+        if not isinstance(p, list) or len(p) < 2:
+            continue
+        cleaned = [float(x) for x in p]
+        paths_out.append(cleaned)
+
+    # Histogram for payoffs
+    vals = [float(v) for v in payoffs]
+    vmin = min(vals)
+    vmax = max(vals)
+
+    if vmin == vmax:
+        # Degenerate distribution: one bin
+        return {
+            "paths": paths_out,
+            "payoff_hist": {
+                "bin_edges": [vmin, vmax],
+                "counts": [len(vals)],
+            },
+        }
+
+    width = (vmax - vmin) / float(nb)
+    edges = [vmin + i * width for i in range(nb + 1)]
+    counts = [0 for _ in range(nb)]
+
+    for v in vals:
+        idx = int((v - vmin) / width)
+        if idx == nb:
+            idx = nb - 1
+        counts[idx] += 1
+
+    return {
+        "paths": paths_out,
+        "payoff_hist": {
+            "bin_edges": edges,
+            "counts": counts,
+        },
+    }
+
+
