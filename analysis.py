@@ -7,12 +7,16 @@ import random
 from typing import Any, Dict, List
 
 
+
+
 def Build_Model_Inputs(ctx):
     """
     Build numerical inputs required for Monte Carlo GBM simulation.
     """
-    # Checks whether the context passed in is valid 
-    if not ctx.get("valid", False):
+    # Context is valid by default unless explicitly marked invalid
+    if ctx is None:
+        raise ValueError("Invalid contract context")
+    if ctx.get("valid", True) is not True:
         raise ValueError("Invalid contract context")
 
     ticker = ctx["ticker"]
@@ -22,7 +26,7 @@ def Build_Model_Inputs(ctx):
     if closes is None or len(closes) < 2:
         raise ValueError("Insufficient price history to build model inputs")
 
-    # Volatility from historical prices
+    # Volatility from yfinance-memoised path
     sigma = compute_historical_volatility(ticker)
 
     # Estimate drift using mean of log returns
@@ -40,7 +44,6 @@ def Build_Model_Inputs(ctx):
         mu_daily = sum(log_returns) / len(log_returns)
 
     mu = mu_daily * 252
-
     r = 0.05
 
     # Time to expiry in years
@@ -52,13 +55,20 @@ def Build_Model_Inputs(ctx):
     steps_per_year = 252
     steps = max(1, int(T_years * steps_per_year))
 
+    # Provide defaults if simulator expects them
+    N = int(ctx.get("N", 1000))
+    seed = int(ctx.get("seed", 42))
+
     return {
         "mu": mu,
         "sigma": sigma,
         "r": r,
         "T_years": T_years,
         "steps": steps,
+        "N": N,
+        "seed": seed,
     }
+
 
 def _randn_box_muller() -> float:
    
@@ -171,7 +181,7 @@ def Run_Monte_Carlo(ctx: Dict[str, Any], inputs: Dict[str, Any]) -> Dict[str, An
         "steps": steps,
         "discount_factor": float(disc),
     }
-# analysis.py
+
 
 def Derive_Metrics(ctx: Dict[str, Any], inputs: Dict[str, Any], sim: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -250,4 +260,26 @@ def Derive_Metrics(ctx: Dict[str, Any], inputs: Dict[str, Any], sim: Dict[str, A
         "p_netprofit": float(p_netprofit),
         "premium_ref": float(premium_ref),
         "count": int(count),
+    }
+
+from analysis import Build_Model_Inputs, Run_Monte_Carlo, Derive_Metrics
+
+def Run_Analysis_Pipeline(ctx: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Returns:
+    - inputs (model inputs dict)
+    - sim (simulation output dict)
+    - metrics (metrics dict)
+    """
+    if ctx is None:
+        raise ValueError("ctx must not be None")
+
+    inputs = Build_Model_Inputs(ctx)
+    sim = Run_Monte_Carlo(ctx, inputs)
+    metrics = Derive_Metrics(ctx, inputs, sim)
+
+    return {
+        "inputs": inputs,
+        "sim": sim,
+        "metrics": metrics,
     }

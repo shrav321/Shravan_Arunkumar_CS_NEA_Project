@@ -1,13 +1,16 @@
-# test_derive_metrics_test3_erroneous_empty.py
+# test_build_model_inputs_test3_erroneous_invalid_ctx.py
 
-from analysis import Derive_Metrics
+from analysis import Build_Model_Inputs
 
-ctx = {"type": "C", "premium_ref": 1.0}
-inputs = {"r": 0.05, "T_years": 1.0}
-sim = {"discounted_payoffs": []}
+ctx = {
+    "valid": False,
+    "ticker": "AAPL",
+    "expiry": "2030-01-01",
+    "closes": [100.0, 101.0, 102.0],
+}
 
 try:
-    Derive_Metrics(ctx, inputs, sim)
+    Build_Model_Inputs(ctx)
     raise AssertionError("Expected ValueError was not raised")
 except ValueError:
     pass
