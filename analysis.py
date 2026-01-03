@@ -425,3 +425,77 @@ def Visualise_Results(sim: Dict[str, Any], max_paths: int = 30, bins: int = 30) 
     }
 
 
+from db_init import get_prices_for_ticker
+
+def Load_Contract_Context(
+    ticker: str,
+    expiry: str,
+    strike: float,
+    option_type: str,
+    spot: float,
+    lookback_min_points: int = 30
+) -> Dict[str, Any]:
+    """
+    
+    Returns a dict with:
+    - valid
+    - ticker, expiry, strike, type
+    - S (spot)
+    - closes (list of close floats)
+    """
+    if ticker is None or str(ticker).strip() == "":
+        raise ValueError("ticker must be non-empty")
+    if expiry is None or str(expiry).strip() == "":
+        raise ValueError("expiry must be non-empty")
+    if option_type is None or str(option_type).strip() == "":
+        raise ValueError("option_type must be non-empty")
+
+    tkr = str(ticker).strip().upper()
+    exp = str(expiry).strip()
+
+    typ = str(option_type).strip().upper()
+    if typ in ("CALL", "CALLS"):
+        typ = "C"
+    if typ in ("PUT", "PUTS"):
+        typ = "P"
+    if typ not in ("C", "P"):
+        raise ValueError("option_type must be C or P")
+
+    try:
+        K = float(strike)
+        S = float(spot)
+    except (TypeError, ValueError):
+        raise ValueError("strike and spot must be numeric")
+
+    if K <= 0:
+        raise ValueError("strike must be > 0")
+    if S <= 0:
+        raise ValueError("spot must be > 0")
+
+    try:
+        min_pts = int(lookback_min_points)
+    except (TypeError, ValueError):
+        raise ValueError("lookback_min_points must be an integer")
+
+    if min_pts < 2:
+        raise ValueError("lookback_min_points must be >= 2")
+
+    rows = get_prices_for_ticker(tkr)
+    closes_all = [float(r[1]) for r in rows]
+
+    if len(closes_all) < 2:
+        raise ValueError("Insufficient cached closes in PRICE table for this ticker")
+
+    closes = closes_all[-min_pts:] if len(closes_all) >= min_pts else closes_all
+
+    return {
+        "valid": True,
+        "ticker": tkr,
+        "expiry": exp,
+        "strike": float(K),
+        "type": typ,
+        "S": float(S),
+        "closes": closes,
+    }
+
+
