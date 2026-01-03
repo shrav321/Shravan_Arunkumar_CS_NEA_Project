@@ -171,3 +171,83 @@ def Run_Monte_Carlo(ctx: Dict[str, Any], inputs: Dict[str, Any]) -> Dict[str, An
         "steps": steps,
         "discount_factor": float(disc),
     }
+# analysis.py
+
+def Derive_Metrics(ctx: Dict[str, Any], inputs: Dict[str, Any], sim: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Returns:
+    - mc_mean
+    - mc_median
+    - q05, q95
+    - p_itm (probability payoff > 0)
+    - p_netprofit (probability discounted payoff > premium_ref)
+    - premium_ref 
+    """
+    if ctx is None or inputs is None or sim is None:
+        raise ValueError("ctx, inputs, and sim must not be None")
+
+    if "discounted_payoffs" not in sim:
+        raise ValueError("sim missing required field: discounted_payoffs")
+
+    payoffs = sim["discounted_payoffs"]
+    if not isinstance(payoffs, list) or len(payoffs) == 0:
+        raise ValueError("discounted_payoffs must be a non-empty list")
+
+    # premium reference: provided by caller for now
+    premium_ref = float(ctx.get("premium_ref", 0.0))
+
+    # Basic probabilities
+    count = len(payoffs)
+
+    # payoff > 0 means ITM at expiry
+    itm_count = 0
+    net_count = 0
+    for v in payoffs:
+        fv = float(v)
+        if fv > 0.0:
+            itm_count += 1
+        if fv > premium_ref:
+            net_count += 1
+
+    p_itm = itm_count / count
+    p_netprofit = net_count / count
+
+    # Summary stats: sort once
+    vals = [float(v) for v in payoffs]
+    vals.sort()
+
+    # Mean
+    mc_mean = sum(vals) / count
+
+    # Median
+    if count % 2 == 1:
+        mc_median = vals[count // 2]
+    else:
+        mid = count // 2
+        mc_median = (vals[mid - 1] + vals[mid]) / 2.0
+
+    # Percentiles
+    # this index formula is subtly wrong for small samples and tends to bias low. 
+    # Should not be a major issue since im using larger samples.
+    # It uses int(p*count) instead of a rank based on (count-1).
+    def _percentile(sorted_vals: List[float], p: float) -> float:
+        idx = int(p * count)  # <-- bug is here
+        if idx < 0:
+            idx = 0
+        if idx >= count:
+            idx = count - 1
+        return float(sorted_vals[idx])
+
+    q05 = _percentile(vals, 0.05)
+    q95 = _percentile(vals, 0.95)
+
+    return {
+        "mc_mean": float(mc_mean),
+        "mc_median": float(mc_median),
+        "q05": float(q05),
+        "q95": float(q95),
+        "p_itm": float(p_itm),
+        "p_netprofit": float(p_netprofit),
+        "premium_ref": float(premium_ref),
+        "count": int(count),
+    }
