@@ -498,4 +498,20 @@ def Load_Contract_Context(
         "closes": closes,
     }
 
+def Select_Target_From_Positions(positions: List[Dict[str, Any]], contract_id: str) -> Dict[str, Any]:
+    
+    if positions is None or not isinstance(positions, list):
+        raise ValueError("positions must be a list")
+
+    cid = str(contract_id).strip()
+    if cid == "":
+        raise ValueError("contract_id must be non-empty")
+
+    for p in positions:
+        if not isinstance(p, dict):
+            continue
+        if str(p.get("contract_id", "")) == cid:
+            return p
+
+    raise ValueError("Selected contract_id not found in positions")
 
