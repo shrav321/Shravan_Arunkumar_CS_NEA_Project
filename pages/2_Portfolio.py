@@ -3,7 +3,7 @@
 import streamlit as st
 from datetime import date
 from typing import Dict, Any, List
-
+from market import get_live_option_premium_for_contract
 from db_init import init_db, get_cash, get_all_trades, get_trades_for_contract
 from portfolio import (
     build_portfolio_view,
@@ -104,18 +104,16 @@ col_left, col_right = st.columns(2)
 with col_left:
     st.subheader("Unrealised P/L")
 
-    current_price_pl = st.number_input(
-        "Current option premium (selected contract)",
-        min_value=0.0,
-        value=0.0,
-        step=0.5,
-        format="%.2f",
-        key="current_price_pl_selected",
-    )
-
-    if st.button("Compute P/L for selected"):
+    if st.button("Fetch live premium and compute P/L"):
         try:
-            pl = unrealised_pl_for_contract(selected_position, float(current_price_pl))
+            live_premium = get_live_option_premium_for_contract(
+                ticker=selected_position["ticker"],
+                expiry=selected_position["expiry"],
+                strike=float(selected_position["strike"]),
+                option_type=selected_position["type"],
+            )
+            pl = unrealised_pl_for_contract(selected_position, live_premium)
+            st.success(f"Live premium: {live_premium:.4f}")
             st.success(f"Unrealised P/L (selected): {pl:.2f}")
         except Exception as e:
             st.error(str(e))

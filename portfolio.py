@@ -548,7 +548,7 @@ from portfolio import (
 
 
 
-from typing import Any, Dict, List, Tuple
+
 
 import market
 from portfolio import build_portfolio_view, compute_bs_greeks_for_contract
@@ -561,7 +561,7 @@ from typing import Any, Dict, List, Tuple, Optional
 
 def build_portfolio_view_with_risk_metrics(
     all_trades: List[Tuple],
-    current_prices: Dict[str, float],
+    current_prices: Optional[Dict[str, float]] = None,
     spot_by_ticker: Optional[Dict[str, float]] = None,
     sigma_by_ticker: Optional[Dict[str, float]] = None,
     r: float = 0.05
@@ -569,15 +569,17 @@ def build_portfolio_view_with_risk_metrics(
     """
     Build a portfolio view enriched with theoretical pricing, mispricing, and Greeks.
 
-    Market premiums are injected via current_prices to keep portfolio logic deterministic.
-    Spot and sigma can be injected for deterministic testing; otherwise they are fetched via market.py.
+    Market premiums:
+    - If current_prices is provided and contains a contract_id, that premium is used.
+    - Otherwise, the premium is fetched live for that specific contract.
+
+    Spot and sigma:
+    - Can be injected for deterministic testing via spot_by_ticker and sigma_by_ticker.
+    - Otherwise, they are fetched via market.py.
     """
     positions = build_portfolio_view(all_trades)
     if not positions:
         return []
-
-    if current_prices is None:
-        raise ValueError("current_prices must not be None")
 
     by_ticker: Dict[str, List[Dict[str, Any]]] = {}
     for pos in positions:
@@ -596,16 +598,26 @@ def build_portfolio_view_with_risk_metrics(
 
         for pos in ticker_positions:
             cid = pos["contract_id"]
-            if cid not in current_prices:
-                raise ValueError(f"Missing current price for contract_id: {cid}")
 
-            market_price = float(current_prices[cid])
+            if current_prices is not None and cid in current_prices:
+                market_price = float(current_prices[cid])
+            else:
+                market_price = float(
+                    market.get_live_option_premium_for_contract(
+                        ticker=pos["ticker"],
+                        expiry=pos["expiry"],
+                        strike=float(pos["strike"]),
+                        option_type=str(pos["type"]),
+                    )
+                )
 
             contract_view = {
                 "ticker": pos["ticker"],
                 "expiry": pos["expiry"],
-                "strike": pos["strike"],
+                "strike": float(pos["strike"]),
                 "type": pos["type"],
+                "ask": market_price,
+                "lastPrice": market_price,
             }
 
             theoretical = market.bs_price_yf(contract_view, spot=spot, sigma=sigma, r=r)
@@ -615,17 +627,17 @@ def build_portfolio_view_with_risk_metrics(
 
             greeks = compute_bs_greeks_for_contract(contract_view, spot=spot, sigma=sigma, r=r)
 
-            pos["spot"] = spot
-            pos["volatility"] = sigma
+            pos["spot"] = float(spot)
+            pos["volatility"] = float(sigma)
 
-            pos["market_price"] = market_price
+            pos["market_price"] = float(market_price)
             pos["theoretical_price"] = float(theoretical)
             pos["mispricing_abs"] = float(diff)
             pos["mispricing_pct"] = float(pct)
 
-            pos["delta"] = greeks["delta"]
-            pos["gamma"] = greeks["gamma"]
-            pos["vega"] = greeks["vega"]
-            pos["theta"] = greeks["theta"]
+            pos["delta"] = float(greeks["delta"])
+            pos["gamma"] = float(greeks["gamma"])
+            pos["vega"] = float(greeks["vega"])
+            pos["theta"] = float(greeks["theta"])
 
     return positions

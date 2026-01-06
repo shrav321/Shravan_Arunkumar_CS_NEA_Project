@@ -432,3 +432,80 @@ def fetch_options_by_ticker_and_type(
             results.append(normalised)
 
     return results
+
+
+
+
+# market.py
+
+import yfinance as yf
+from typing import Any, Dict
+
+from market import get_current_option_price  # remove this line if already in same file
+
+
+def get_live_option_premium_for_contract(
+    ticker: str,
+    expiry: str,
+    strike: float,
+    option_type: str
+) -> float:
+    """
+    Fetch a single option's tradable premium for the given contract.
+    Uses ask if available, else lastPrice (via get_current_option_price).
+    """
+    if ticker is None or str(ticker).strip() == "":
+        raise ValueError("ticker must be non-empty")
+    if expiry is None or str(expiry).strip() == "":
+        raise ValueError("expiry must be non-empty")
+    if option_type is None or str(option_type).strip() == "":
+        raise ValueError("option_type must be non-empty")
+
+    tkr = str(ticker).strip().upper()
+    exp = str(expiry).strip()
+
+    typ = str(option_type).strip().upper()
+    if typ in ("CALL", "CALLS"):
+        typ = "C"
+    if typ in ("PUT", "PUTS"):
+        typ = "P"
+    if typ not in ("C", "P"):
+        raise ValueError("option_type must be 'C' or 'P'")
+
+    try:
+        k = float(strike)
+    except (TypeError, ValueError):
+        raise ValueError("strike must be numeric")
+    if k <= 0:
+        raise ValueError("strike must be > 0")
+
+    yf_tkr = yf.Ticker(tkr)
+
+    # Pull the chain for the specific expiry
+    chain = yf_tkr.option_chain(exp)
+
+    # Pick calls or puts
+    df = chain.calls if typ == "C" else chain.puts
+
+    # Find the row with exact strike
+    # yfinance strikes are floats, so compare as floats
+    rows = df[df["strike"].astype(float) == float(k)]
+    if rows.empty:
+        raise ValueError("Contract not found in chain for given expiry and strike")
+
+    row = rows.iloc[0].to_dict()
+
+    # Build a row compatible with get_current_option_price
+    option_row: Dict[str, Any] = {
+        "ticker": tkr,
+        "expiry": exp,
+        "strike": float(k),
+        "type": typ,
+        "ask": row.get("ask", None),
+        "lastPrice": row.get("lastPrice", None),
+        "bid": row.get("bid", None),
+        "openInterest": row.get("openInterest", None),
+        "impliedVolatility": row.get("impliedVolatility", None),
+    }
+
+    return float(get_current_option_price(option_row))
