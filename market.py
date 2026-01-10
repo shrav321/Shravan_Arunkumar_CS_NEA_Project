@@ -208,7 +208,7 @@ def _norm_cdf(x: float) -> float:
     using the Abramowitz-Stegun 7.1.26 rational approximation.
     Accurate to around 7 decimal places.
     """
-    # Coefficients from Abramowitz & Stegun 7.1.26
+    # Coefficients from Abramowitz & Stegun
     a1 = 0.319381530
     a2 = -0.356563782
     a3 = 1.781477937
@@ -216,7 +216,6 @@ def _norm_cdf(x: float) -> float:
     a5 = 1.330274429
     p  = 0.2316419
 
-    # Use symmetry: work with |x|, remember the sign
     sign = 1
     if x < 0:
         sign = -1
@@ -228,7 +227,7 @@ def _norm_cdf(x: float) -> float:
     # Standard normal PDF at x
     pdf = math.exp(-0.5 * x * x) / math.sqrt(2.0 * math.pi)
 
-    # Polynomial P(t) approximating the tail factor
+   
     poly = a1*t + a2*t*t + a3*t*t*t + a4*t*t*t*t + a5*t*t*t*t*t
 
     # Approximate CDF for x >= 0
@@ -251,16 +250,10 @@ def bs_price_yf(
     r: float = RISK_FREE_RATE_DEFAULT
 ) -> float:
     """
-    Compute Black-Scholes theoretical price for a European option.
-
-    option_row must include:
-    - strike (numeric)
-    - expiry (YYYY-MM-DD)
-    - type ('C' or 'P')
-
-    spot: underlying spot price (S)
-    sigma: annualised volatility 
-    r: risk-free rate 
+     option_row must include:
+    - strike 
+    - expiry 
+    - type ("C" or "P")
     """
     if option_row is None:
         raise ValueError("option_row must not be None")
@@ -436,7 +429,7 @@ def fetch_options_by_ticker_and_type(
 
 
 
-# market.py
+
 
 import yfinance as yf
 from typing import Any, Dict
