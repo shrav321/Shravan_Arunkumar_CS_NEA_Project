@@ -105,13 +105,16 @@ with right:
         format="%.2f",
     )
 
+    # Auto-populate premium reference from average cost
+    default_premium = float(pos.get("average_cost") or 0.0)
+    
     premium_ref = st.number_input(
         "Premium reference (used for net profit probability)",
         min_value=0.0,
-        value=0.0,
+        value=default_premium,
         step=0.1,
         format="%.4f",
-        help="Compared against discounted payoff to estimate probability of clearing the premium.",
+        help=f"Defaults to your average cost (${default_premium:.4f}). Compared against discounted payoff to estimate probability of clearing the premium.",
     )
 
     N = st.number_input("Simulations (N)", min_value=100, max_value=20000, value=3000, step=100)
@@ -285,4 +288,4 @@ P(payoff > premium)
 Fraction of simulations where the discounted payoff exceeds the reference premium.
         """
     )
-    
+

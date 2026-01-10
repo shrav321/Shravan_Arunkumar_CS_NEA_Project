@@ -203,7 +203,7 @@ for tkr in tickers:
     if tkr not in st.session_state.vol_inputs:
         st.session_state.vol_inputs[tkr] = 0.0
 
-mode_col1, mode_col2 = st.columns([1, 1])
+mode_col1, mode_col2, mode_col3 = st.columns([1, 1, 1])
 with mode_col1:
     use_live_market_inputs = st.checkbox(
         "Use live spot and volatility",
@@ -212,9 +212,35 @@ with mode_col1:
     )
 
 with mode_col2:
+    use_live_premiums = st.checkbox(
+        "Auto-fetch live premiums",
+        value=False,
+        help="When enabled, current market premiums are automatically fetched for all positions. May take a few seconds.",
+    )
+
+with mode_col3:
     run_risk = st.button("Compute risk metrics")
 
-with st.expander("Enter current premiums for open positions", expanded=True):
+# Auto-fetch live premiums if checkbox is enabled
+if use_live_premiums:
+    with st.spinner("Fetching live premiums for all positions..."):
+        try:
+            for cid in contract_ids:
+                pos = next(p for p in positions if p["contract_id"] == cid)
+                live_premium = get_live_option_premium_for_contract(
+                    ticker=pos["ticker"],
+                    expiry=pos["expiry"],
+                    strike=float(pos["strike"]),
+                    option_type=pos["type"],
+                )
+                st.session_state.premium_inputs[cid] = float(live_premium)
+            st.success(f"Fetched live premiums for {len(contract_ids)} contracts.")
+        except Exception as e:
+            st.error(f"Error fetching live premiums: {str(e)}")
+            use_live_premiums = False  # Fall back to manual
+
+# Show manual input expander (collapsed when using live data)
+with st.expander("Enter current premiums for open positions", expanded=not use_live_premiums):
     st.write("These premiums are used as the market price for mispricing calculations.")
     for cid in contract_ids:
         st.number_input(
