@@ -364,10 +364,9 @@ def _normalise_option_type(option_type: str) -> str:
 
 
 def _rows_from_chain_table(table: Any) -> List[Dict[str, Any]]:
-    """
-    Convert a yfinance option chain table into a list of plain dict rows.
-    Supports DataFrame-like objects with to_dict('records') and also plain lists. 
-    """
+   
+    #Convert a yfinance option chain table into a list of plain dict rows.
+     
     if table is None:
         return []
 

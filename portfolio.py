@@ -365,11 +365,10 @@ def compute_bs_greeks_for_contract(
     r: float = RISK_FREE_RATE_DEFAULT
 ) -> Dict[str, float]:
     """
-    Compute Black-Scholes Greeks for a European option.
 
     contract must include:
-    - strike (numeric)
-    - expiry (YYYY-MM-DD)
+    - strike 
+    - expiry 
     - type ('C' or 'P')
 
     Returns:
