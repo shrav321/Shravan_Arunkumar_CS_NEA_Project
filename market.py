@@ -62,7 +62,7 @@ def ensure_contract_exists(contract_id: str, ticker: str, expiry: str, strike: f
 
 
 
-from typing import Any, Mapping
+from typing import Dict, Any, Mapping, List, Tuple, Optional, Callable
 
 
 def get_current_option_price(option_row: Mapping[str, Any]) -> float:
@@ -137,8 +137,6 @@ def get_underlying_spot(ticker: str) -> float:
 
 
 import math
-from typing import List, Tuple
-
 from db_init import get_prices_for_ticker, insert_price_row
 import yfinance as yf
 
@@ -238,7 +236,6 @@ def _norm_cdf(x: float) -> float:
 
 
 from datetime import datetime, timezone
-from typing import Dict, Any
 
 RISK_FREE_RATE_DEFAULT = 0.05  # 5% per annum
 
@@ -310,11 +307,6 @@ def bs_price_yf(
 
     return float(price)
 
-
-from typing import Dict, Any
-
-
-
 def compute_mispricing_for_contract(
     option_row: Dict[str, Any],
     spot: float,
@@ -328,7 +320,7 @@ def compute_mispricing_for_contract(
     - market_price
     - theoretical_price
     - mispricing_abs (market - theoretical)
-    - mispricing_pct ((market - theoretical) / theoretical), 0 if theoretical is 0
+    - mispricing_pct ((market - theoretical) / theoretical)
     """
     if option_row is None:
         raise ValueError("option_row must not be None")
@@ -349,8 +341,6 @@ def compute_mispricing_for_contract(
         "mispricing_abs": float(diff),
         "mispricing_pct": float(pct),
     }
-
-from typing import Any, Callable, Dict, List, Optional
 
 
 
@@ -426,15 +416,7 @@ def fetch_options_by_ticker_and_type(
     return results
 
 
-
-
-
-
-import yfinance as yf
-from typing import Any, Dict
-
-from market import get_current_option_price  # remove this line if already in same file
-
+from market import get_current_option_price  
 
 def get_live_option_premium_for_contract(
     ticker: str,

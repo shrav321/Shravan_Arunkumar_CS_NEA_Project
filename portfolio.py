@@ -161,7 +161,7 @@ def _position_key(pos: Dict[str, Any]) -> tuple:
     Sorting priority:
     1) ticker (A-Z)
     2) expiry (ISO date string, so lexical order matches chronological order)
-    3) strike (numeric)
+    3) strike
     4) type (C before P )
     """
     ticker = str(pos["ticker"])
@@ -172,10 +172,10 @@ def _position_key(pos: Dict[str, Any]) -> tuple:
 
 
 def _insertion_sort_positions(positions: List[Dict[str, Any]]) -> None:
-    """
-    Sort positions in-place using insertion sort and _position_key.
+    
+    # Sort positions in-place using insertion sort and _position_key.
 
-    """
+   
     for i in range(1, len(positions)):
         current = positions[i]
         current_key = _position_key(current)
@@ -302,11 +302,6 @@ def unrealised_pl_for_contract(position: Dict[str, Any], current_price: float, c
 
     return float(pl_total)
 
-# portfolio.py
-
-
-
-from portfolio import build_portfolio_view, unrealised_pl_for_contract
 
 
 def build_portfolio_view_with_pl(
@@ -346,13 +341,8 @@ def build_portfolio_view_with_pl(
 
 import math
 from datetime import datetime, timezone
-from typing import Dict, Any
 from market import _norm_cdf
 RISK_FREE_RATE_DEFAULT = 0.05
-
-
-
-
 
 def _norm_pdf(x: float) -> float:
     return (1.0 / math.sqrt(2.0 * math.pi)) * math.exp(-0.5 * x * x)
@@ -452,8 +442,6 @@ def compute_bs_greeks_for_contract(
 
 
 CONTRACT_MULTIPLIER_DEFAULT = 100
-RISK_FREE_RATE_DEFAULT = 0.05
-
 
 def attach_greeks_to_portfolio_view(
     positions: List[Dict[str, Any]],
@@ -539,10 +527,7 @@ from market import (
     bs_price_yf,
     compute_mispricing_for_contract
 )
-from portfolio import (
-    build_portfolio_view,
-    compute_bs_greeks_for_contract
-)
+
 
 
 
@@ -551,11 +536,7 @@ from portfolio import (
 
 import market
 from portfolio import build_portfolio_view, compute_bs_greeks_for_contract
-
-
-
-
-from typing import Any, Dict, List, Tuple, Optional
+from typing import Optional
 
 
 def build_portfolio_view_with_risk_metrics(
