@@ -5,9 +5,9 @@ from db_init import init_db
 
 init_db()
 
-st.set_page_config(page_title="Options Trading Simulator", layout="wide")
+st.set_page_config(page_title="Shravan's Options Trading Simulator", layout="wide")
 
-st.title("Options Trading Simulator")
+st.title("Shravan's Options Trading Simulator")
 
 st.markdown(
     """

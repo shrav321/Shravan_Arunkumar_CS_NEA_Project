@@ -176,7 +176,7 @@ st.divider()
 # -----------------------------
 # Cycle 3: Risk metrics prototype
 # -----------------------------
-st.subheader("Risk metrics (Cycle 3 prototype)")
+st.subheader("Risk Metrics")
 st.caption(
     "Market premiums are supplied explicitly per contract. Theoretical price, mispricing, and Greeks are derived from the pricing model."
 )
