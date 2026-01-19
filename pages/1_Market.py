@@ -144,7 +144,6 @@ if fetch_btn:
         rows = fetch_options_by_ticker_and_type(ticker, opt_type)
 
 
-        # Apply strike filters in the UI layer so core function stays reusable
         filtered = []
         for r in rows:
             try:
