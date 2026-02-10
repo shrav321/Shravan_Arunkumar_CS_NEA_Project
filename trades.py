@@ -52,7 +52,7 @@ def execute_buy_from_market(option_row: Mapping[str, Any], quantity: int) -> dic
     if option_row is None:
         raise ValueError("option_row must not be None")
 
-    # Validate quantity early because it affects affordability and trade recording.
+    # Validate quantity early because it affects affordability and trade recording
     try:
         qty = int(quantity)
     except (TypeError, ValueError):
@@ -179,10 +179,6 @@ from typing import Dict, Any
 
 from db_init import get_trades_for_contract, insert_trade, adjust_cash
 from portfolio import derive_holdings_from_trade
-
-
-CONTRACT_MULTIPLIER = 100
-
 
 def execute_exercise_from_portfolio(
     contract: Dict[str, Any],

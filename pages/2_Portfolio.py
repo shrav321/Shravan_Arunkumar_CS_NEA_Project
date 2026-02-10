@@ -3,6 +3,7 @@
 import streamlit as st
 from datetime import date
 from typing import Dict, Any, List
+
 from market import get_live_option_premium_for_contract
 from db_init import init_db, get_cash, get_all_trades, get_trades_for_contract
 from portfolio import (
@@ -13,6 +14,7 @@ from portfolio import (
 from trades import execute_exercise_from_portfolio, execute_expire_worthless_from_portfolio
 
 
+# Utility function to force refresh the Streamlit UI state
 def _rerun() -> None:
     fn = getattr(st, "rerun", None)
     if callable(fn):
@@ -25,6 +27,7 @@ def _rerun() -> None:
     raise RuntimeError("No rerun function available in this Streamlit version")
 
 
+# Utility to fetch cash balance with a database initialization fallback
 def _read_cash_safely() -> float:
     try:
         return float(get_cash())
@@ -33,6 +36,7 @@ def _read_cash_safely() -> float:
         return float(get_cash())
 
 
+# Page configuration and database connection setup
 st.set_page_config(page_title="Portfolio", layout="wide")
 init_db()
 
@@ -41,21 +45,21 @@ st.caption(
     "Positions are reconstructed from the trade ledger. Lifecycle resolution is recorded as explicit trade events."
 )
 
-# Sidebar: account + reload
+# Sidebar: Displays current account liquidity and manual reload trigger
 with st.sidebar:
     st.header("Account")
     st.metric("Cash Balance", f"{_read_cash_safely():.2f}")
     if st.button("Reload"):
         _rerun()
 
-# Load trades
+# Load all trade records from the persistent SQL database
 try:
     all_trades = get_all_trades()
 except Exception as e:
     st.error(str(e))
     st.stop()
 
-# Cycle 2 baseline: build positions view
+# Aggregate trade history into a summary view of active positions
 positions = build_portfolio_view(all_trades)
 
 st.subheader("Open positions")
@@ -64,6 +68,7 @@ if len(positions) == 0:
     st.info("No open positions.")
     st.stop()
 
+# Display current holdings in a formatted data table
 st.dataframe(
     [
         {
@@ -80,7 +85,7 @@ st.dataframe(
     use_container_width=True,
 )
 
-# Contract selector
+# Interface for selecting a specific position for further analysis or action
 contract_ids = [p["contract_id"] for p in positions]
 selected_cid = st.selectbox("Select contract", contract_ids)
 
@@ -98,9 +103,7 @@ st.divider()
 
 col_left, col_right = st.columns(2)
 
-# -----------------------------
-# Unrealised P/L (selected only)
-# -----------------------------
+# Calculation of Unrealised Profit and Loss based on live market premiums
 with col_left:
     st.subheader("Unrealised P/L")
 
@@ -118,9 +121,7 @@ with col_left:
         except Exception as e:
             st.error(str(e))
 
-# -----------------------------
-# Lifecycle resolution
-# -----------------------------
+# Logic for contract lifecycle management: manual exercise or worthless expiry
 with col_right:
     st.subheader("Lifecycle resolution")
 
@@ -173,15 +174,13 @@ with col_right:
 
 st.divider()
 
-# -----------------------------
-# Cycle 3: Risk metrics prototype
-# -----------------------------
+# Advanced risk assessment section including Black-Scholes Greeks
 st.subheader("Risk Metrics")
 st.caption(
     "Market premiums are supplied explicitly per contract. Theoretical price, mispricing, and Greeks are derived from the pricing model."
 )
 
-# Session state: premiums per contract
+# Manage session state for market premiums across all held contracts
 if "premium_inputs" not in st.session_state:
     st.session_state.premium_inputs = {}
 
@@ -189,7 +188,7 @@ for cid in contract_ids:
     if cid not in st.session_state.premium_inputs:
         st.session_state.premium_inputs[cid] = 0.0
 
-# Session state: optional manual spot and vol per ticker
+# Aggregation of tickers for spot/volatility inputs
 tickers = sorted({p["ticker"] for p in positions})
 
 if "spot_inputs" not in st.session_state:
@@ -203,6 +202,7 @@ for tkr in tickers:
     if tkr not in st.session_state.vol_inputs:
         st.session_state.vol_inputs[tkr] = 0.0
 
+# Controls for toggling between live market data and manual input overrides
 mode_col1, mode_col2, mode_col3 = st.columns([1, 1, 1])
 with mode_col1:
     use_live_market_inputs = st.checkbox(
@@ -221,7 +221,7 @@ with mode_col2:
 with mode_col3:
     run_risk = st.button("Compute risk metrics")
 
-# Auto-fetch live premiums if checkbox is enabled
+# Background fetch of live premiums if automated tracking is enabled
 if use_live_premiums:
     with st.spinner("Fetching live premiums for all positions..."):
         try:
@@ -237,9 +237,9 @@ if use_live_premiums:
             st.success(f"Fetched live premiums for {len(contract_ids)} contracts.")
         except Exception as e:
             st.error(f"Error fetching live premiums: {str(e)}")
-            use_live_premiums = False  # Fall back to manual
+            use_live_premiums = False  # Fall back to manual entry mode
 
-# Show manual input expander (collapsed when using live data)
+# Collapsible manual price input for mispricing analysis
 with st.expander("Enter current premiums for open positions", expanded=not use_live_premiums):
     st.write("These premiums are used as the market price for mispricing calculations.")
     for cid in contract_ids:
@@ -253,6 +253,7 @@ with st.expander("Enter current premiums for open positions", expanded=not use_l
         )
         st.session_state.premium_inputs[cid] = float(st.session_state[f"prem_{cid}"])
 
+# Collapsible manual volatility and spot inputs for sensitivity modeling
 if not use_live_market_inputs:
     with st.expander("Manual spot and volatility (optional)", expanded=True):
         st.write("Spot is in currency units. Volatility is annualised, such as 0.20 for 20%.")
@@ -281,6 +282,7 @@ if not use_live_market_inputs:
 
 risk_positions: List[Dict[str, Any]] = []
 
+# Calculation of Black-Scholes risk metrics for all portfolio holdings
 if run_risk:
     try:
         current_prices: Dict[str, float] = {
@@ -305,6 +307,7 @@ if run_risk:
     except Exception as e:
         st.error(str(e))
 
+# Display the final risk table including mispricing and Greeks
 if risk_positions:
     st.dataframe(
         [
@@ -331,28 +334,23 @@ if risk_positions:
         use_container_width=True,
     )
 
+# Reference definitions for Greek terminology
 with st.expander("Greeks explained", expanded=False):
     st.markdown(
         """
-**Delta (Δ)**  
-Approximate change in option premium for a 1 unit move in the underlying. Calls typically have positive delta; puts typically have negative delta.
+**Delta (Δ)** Approximate change in option premium for a 1 unit move in the underlying. Calls typically have positive delta; puts typically have negative delta.
 
-**Gamma (Γ)**  
-Rate of change of delta as the underlying moves. Higher gamma means delta changes faster, which increases curvature risk.
+**Gamma (Γ)** Rate of change of delta as the underlying moves. Higher gamma means delta changes faster, which increases curvature risk.
 
-**Vega (V)**  
-Approximate change in option premium for a 1.00 change in volatility (in this implementation, vega is per 1.0 volatility unit). Higher vega means the option price is more sensitive to volatility shifts.
+**Vega (V)** Approximate change in option premium for a 1.00 change in volatility (in this implementation, vega is per 1.0 volatility unit). Higher vega means the option price is more sensitive to volatility shifts.
 
-**Theta (Θ)**  
-Time decay. This value is reported per day. Negative theta means the option tends to lose value as expiry approaches, holding other inputs fixed.
+**Theta (Θ)** Time decay. This value is reported per day. Negative theta means the option tends to lose value as expiry approaches, holding other inputs fixed.
         """
     )
 
 st.divider()
 
-# -----------------------------
-# Trade history
-# -----------------------------
+# Comprehensive trade history logs, filterable by specific contract
 st.subheader("Trade history")
 scope = st.radio("Scope", ["Selected contract", "All trades"], horizontal=True)
 
@@ -365,6 +363,7 @@ except Exception as e:
     st.error(str(e))
     st.stop()
 
+# Final output of the immutable trade ledger
 st.dataframe(
     [
         {

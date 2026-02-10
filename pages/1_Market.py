@@ -2,6 +2,7 @@
 
 import streamlit as st
 
+# Import database, market data, and trade execution logic
 from db_init import init_db, get_cash, adjust_cash, get_db_path
 from market import build_contract_id, fetch_options_by_ticker_and_type
 from trades import execute_buy_from_market, execute_sell_from_portfolio
@@ -10,6 +11,7 @@ from trades import execute_buy_from_market, execute_sell_from_portfolio
 DEV_MODE = False
 
 
+# Utility to refresh the Streamlit UI state across different versions
 def _rerun() -> None:
     fn = getattr(st, "rerun", None)
     if callable(fn):
@@ -22,6 +24,7 @@ def _rerun() -> None:
     raise RuntimeError("No rerun function available in this Streamlit version")
 
 
+# Wrapper to fetch cash balance with a fallback to DB initialization if empty
 def _read_cash_safely() -> float:
     try:
         return float(get_cash())
@@ -30,6 +33,7 @@ def _read_cash_safely() -> float:
         return float(get_cash())
 
 
+# Page setup and initialization
 init_db()
 st.set_page_config(page_title="Market", layout="wide")
 st.title("Market")
@@ -41,9 +45,9 @@ recorded in the persistent trade ledger.
 """
 )
 
-# -------------------------
-# Sidebar: System controls
-# -------------------------
+
+# Sidebar: System controls for database and liquidity management
+
 with st.sidebar:
     st.header("System")
     st.caption(get_db_path())
@@ -67,6 +71,7 @@ with st.sidebar:
         key="deposit_amount"
     )
 
+    # Logic to increase the user's available cash balance
     if st.button("Deposit"):
         try:
             amt = float(st.session_state.deposit_amount)
@@ -78,6 +83,7 @@ with st.sidebar:
         except Exception as e:
             st.error(str(e))
 
+    # Hidden controls for testing and development
     if DEV_MODE:
         st.caption("Development controls")
         if "set_cash_value" not in st.session_state:
@@ -99,11 +105,12 @@ with st.sidebar:
                 st.error(str(e))
 
 
-# -------------------------
-# Market discovery controls
-# -------------------------
+
+# Market discovery controls: Ticker and filtering inputs
+
 st.header("Live option search")
 
+# Persistence for search results across UI interactions
 if "last_query_rows" not in st.session_state:
     st.session_state.last_query_rows = []
 
@@ -125,6 +132,7 @@ with col3:
 with col4:
     fetch_btn = st.button("Fetch chain")
 
+# Strike price and result count filters
 filter_row1, filter_row2, filter_row3 = st.columns(3)
 
 with filter_row1:
@@ -136,6 +144,7 @@ with filter_row2:
 with filter_row3:
     limit_rows = st.number_input("Max rows", min_value=25, max_value=5000, value=250, step=25)
 
+# Main logic to fetch and filter live market data
 if fetch_btn:
     try:
         if ticker == "":
@@ -151,6 +160,7 @@ if fetch_btn:
             except Exception:
                 continue
 
+            # Apply numerical range filtering for strikes
             if strike_min > 0 and k < float(strike_min):
                 continue
             if strike_max > 0 and k > float(strike_max):
@@ -158,9 +168,11 @@ if fetch_btn:
 
             filtered.append(r)
 
+        # Truncate results to respect user-defined row limit
         if len(filtered) > int(limit_rows):
             filtered = filtered[:int(limit_rows)]
 
+        # Store results in session state to prevent loss on re-run
         st.session_state.last_query_rows = filtered
         st.session_state.last_query_meta = {
             "ticker": ticker,
@@ -185,9 +197,9 @@ if len(rows) == 0:
     st.info("No chain loaded. Use the controls above to fetch live options.")
     st.stop()
 
-# -------------------------
-# Display and selection
-# -------------------------
+
+# UI Rendering: Display results in a searchable dataframe and handle contract selection
+
 st.subheader("Contracts")
 
 display_rows = []
@@ -209,6 +221,7 @@ for i, r in enumerate(rows):
 
 st.dataframe(display_rows, use_container_width=True)
 
+# Interface for selecting a specific contract for trade execution
 selected_index = st.number_input(
     "Select contract index",
     min_value=0,
@@ -230,6 +243,7 @@ st.code(contract_id)
 
 qty = st.number_input("Quantity (contracts)", min_value=1, step=1, value=1)
 
+# Execution buttons for Buying or Selling options
 colA, colB = st.columns(2)
 
 with colA:
@@ -253,9 +267,9 @@ with colB:
             st.error(str(e))
 
 
-# -------------------------
-# Optional fallback: manual quote board
-# -------------------------
+
+# Expandable section for manual entry when live API data is unavailable
+
 with st.expander("Manual quote board (fallback)", expanded=False):
     st.caption(
         "This is useful when live chain data is missing usable prices or for deterministic demonstrations."

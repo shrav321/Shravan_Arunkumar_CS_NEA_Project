@@ -22,6 +22,7 @@ def derive_holdings_from_trade(trades: List[Tuple]) -> Dict[str, int]:
         if contract_id not in holdings:
             holdings[contract_id] = 0
 
+        # Increments or decrements holdings based on trade side (BUY/SELL)
         if side == "BUY":
             holdings[contract_id] += quantity
         elif side == "SELL":
@@ -64,6 +65,7 @@ def attach_contract_details(holdings: Dict[str, int]) -> Dict[str, Dict[str, Any
         if row is None:
             raise ValueError(f"Contract not found in CONTRACT table: {contract_id}")
 
+        # Map SQL row data to a descriptive dictionary
         enriched[contract_id] = {
             "contract_id": row[0],
             "ticker": row[1],
@@ -122,6 +124,7 @@ def get_position_metrics(trades: List[Tuple]) -> Dict[str, Any]:
         if price <= 0:
             raise ValueError("Trade price must be > 0")
 
+        # Track total capital deployed to calculate average entry price
         if side == "BUY":
             net_qty += qty
             total_bought_qty += qty
@@ -131,6 +134,7 @@ def get_position_metrics(trades: List[Tuple]) -> Dict[str, Any]:
         else:
             raise ValueError(f"Unknown trade side: {side}")
 
+    # Ensure logical consistency of the ledger
     if net_qty < 0:
         raise ValueError("Net quantity became negative - trade history is inconsistent")
 
@@ -297,6 +301,7 @@ def unrealised_pl_for_contract(position: Dict[str, Any], current_price: float, c
     if ac <= 0:
         raise ValueError("average_cost must be > 0")
 
+    # Formula: (Market Price - Entry Price) * Quantity * 100
     pl_per_share = cp - ac
     pl_total = pl_per_share * net_qty * int(contract_multiplier)
 
@@ -345,6 +350,7 @@ from market import _norm_cdf
 RISK_FREE_RATE_DEFAULT = 0.05
 
 def _norm_pdf(x: float) -> float:
+    # Standard normal probability density function calculation
     return (1.0 / math.sqrt(2.0 * math.pi)) * math.exp(-0.5 * x * x)
 
 
@@ -406,6 +412,7 @@ def compute_bs_greeks_for_contract(
     if T <= 0:
         raise ValueError("time to expiry must be positive for Greeks")
 
+    # Black-Scholes Greeks: numerical sensitivities to market variables
     sqrtT = math.sqrt(T)
     d1 = (math.log(S / K) + (rate + 0.5 * vol * vol) * T) / (vol * sqrtT)
     d2 = d1 - vol * sqrtT
@@ -500,8 +507,10 @@ def attach_greeks_to_portfolio_view(
             "type": pos["type"],
         }
 
+        # Calculate sensitivity metrics for one share
         per_share = compute_bs_greeks_for_contract(contract, spot=spot, sigma=sigma, r=r)
 
+        # Scale Greeks by position size and the standard 100-share multiplier
         scale = net_qty * int(contract_multiplier)
         per_position = {
             "delta": per_share["delta"] * scale,
@@ -513,6 +522,7 @@ def attach_greeks_to_portfolio_view(
         pos["greeks_per_share"] = per_share
         pos["greeks_position"] = per_position
 
+        # Accumulate net risk exposure for the total portfolio summary
         totals["delta"] += float(per_position["delta"])
         totals["gamma"] += float(per_position["gamma"])
         totals["vega"] += float(per_position["vega"])
@@ -561,6 +571,7 @@ def build_portfolio_view_with_risk_metrics(
     if not positions:
         return []
 
+    # Map positions to tickers to minimize redundant market data requests
     by_ticker: Dict[str, List[Dict[str, Any]]] = {}
     for pos in positions:
         by_ticker.setdefault(pos["ticker"], []).append(pos)
@@ -600,11 +611,14 @@ def build_portfolio_view_with_risk_metrics(
                 "lastPrice": market_price,
             }
 
+            # Black-Scholes Valuation Logic
             theoretical = market.bs_price_yf(contract_view, spot=spot, sigma=sigma, r=r)
 
+            # Calculation of market efficiency (Mispricing)
             diff = market_price - theoretical
             pct = diff / theoretical if theoretical > 0 else 0.0
 
+            # Sensitivity Analysis
             greeks = compute_bs_greeks_for_contract(contract_view, spot=spot, sigma=sigma, r=r)
 
             pos["spot"] = float(spot)

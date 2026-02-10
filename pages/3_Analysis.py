@@ -5,10 +5,12 @@ from datetime import date
 from typing import Any, Dict, List
 import matplotlib.pyplot as plt
 
+# Core logic and database integration imports
 from db_init import init_db, get_all_trades
 from portfolio import build_portfolio_view
 from market import get_underlying_spot, compute_historical_volatility
 
+# Analysis pipeline modular functions
 from analysis import (
     Load_Contract_Context,
     Run_Analysis_Pipeline,
@@ -17,6 +19,7 @@ from analysis import (
 )
 
 
+# Utility function to force refresh the Streamlit UI state
 def _rerun() -> None:
     fn = getattr(st, "rerun", None)
     if callable(fn):
@@ -29,6 +32,7 @@ def _rerun() -> None:
     raise RuntimeError("No rerun function available in this Streamlit version")
 
 
+# Helper function to find a specific contract within the reconstructed portfolio list
 def _resolve_position(positions: List[Dict[str, Any]], contract_id: str) -> Dict[str, Any]:
     cid = str(contract_id).strip()
     if cid == "":
@@ -39,14 +43,14 @@ def _resolve_position(positions: List[Dict[str, Any]], contract_id: str) -> Dict
     raise ValueError("Selected contract_id not found in positions")
 
 
+# Page configuration and persistent storage initialization
 init_db()
 st.set_page_config(page_title="Analysis", layout="wide")
 st.title("Analysis")
 st.caption("Monte Carlo GBM valuation pipeline with findings and visualisation.")
 
 
-# Load positions
-
+# Load current portfolio positions from the trade ledger
 try:
     all_trades = get_all_trades()
 except Exception as e:
@@ -55,16 +59,18 @@ except Exception as e:
 
 positions = build_portfolio_view(all_trades)
 
+# Termination check if portfolio is empty
 if len(positions) == 0:
     st.info("No open positions. Create a position from the Market page first.")
     st.stop()
 
 contract_ids = [p["contract_id"] for p in positions]
 
-# Selection + inputs
+# UI Layout: Selection and Modeling Parameter Inputs
 
 left, right = st.columns([1.2, 1.0])
 
+# Column 1: Selection of the target contract for simulation
 with left:
     st.subheader("1) Select contract")
     selected_cid = st.selectbox("Open contracts", contract_ids)
@@ -88,6 +94,7 @@ with left:
         }
     )
 
+# Column 2: Configuration of market data sources and Monte Carlo parameters
 with right:
     st.subheader("2) Market and modelling inputs")
 
@@ -105,7 +112,7 @@ with right:
         format="%.2f",
     )
 
-    # Auto-populate premium reference from average cost
+    # Automatic retrieval of premium reference to help calculate P(Net Profit)
     default_premium = float(pos.get("average_cost") or 0.0)
     
     premium_ref = st.number_input(
@@ -117,6 +124,7 @@ with right:
         help=f"Defaults to your average cost (${default_premium:.4f}). Compared against discounted payoff to estimate probability of clearing the premium.",
     )
 
+    # Simulation resolution settings
     N = st.number_input("Simulations (N)", min_value=100, max_value=20000, value=3000, step=100)
     seed = st.number_input("Random seed", min_value=0, max_value=10**9, value=42, step=1)
 
@@ -124,8 +132,7 @@ with right:
     ensure_prices = st.button("Ensure historical prices exist for ticker")
 
 
-# Ensure cached prices
-
+# Background task to ensure underlying data exists for volatility calculation
 if ensure_prices:
     try:
         tkr = str(pos["ticker"]).strip().upper()
@@ -135,7 +142,7 @@ if ensure_prices:
         st.error(str(e))
 
 
-# Run pipeline
+# Execution logic for the Monte Carlo Geometric Brownian Motion (GBM) pipeline
 
 st.subheader("3) Run analysis pipeline")
 
@@ -145,6 +152,7 @@ if run_btn:
     try:
         tkr = str(pos["ticker"]).strip().upper()
 
+        # Resolve spot price based on user preference (Live vs Manual)
         if use_live_spot:
             spot = float(get_underlying_spot(tkr))
         else:
@@ -152,6 +160,7 @@ if run_btn:
             if spot <= 0:
                 raise ValueError("Manual spot must be > 0 when live spot is disabled")
 
+        # Prepare context object for the analysis engine
         ctx = Load_Contract_Context(
             ticker=tkr,
             expiry=str(pos["expiry"]),
@@ -165,18 +174,19 @@ if run_btn:
         ctx["N"] = int(N)
         ctx["seed"] = int(seed)
 
+        # Trigger the computational pipeline
         out = Run_Analysis_Pipeline(ctx)
         inputs = out["inputs"]
         sim = out["sim"]
         metrics = out["metrics"]
 
+        # Process numerical results into human-readable findings and chart data
         findings = Render_Findings(ctx, inputs, metrics)
         viz = Visualise_Results(sim, max_paths=30, bins=30)
 
         st.success("Pipeline completed.")
 
-        # Results: findings
-
+        # Results Display: Summary findings and flags
         st.subheader("Findings")
         for line in findings["summary_lines"]:
             st.write(line)
@@ -187,8 +197,7 @@ if run_btn:
                 st.write(f)
 
 
-        # Results: key numbers
-
+        # Results Display: Statistical key metrics
         st.subheader("Key metrics")
         nums = findings["numbers"]
         k1, k2, k3, k4 = st.columns(4)
@@ -205,7 +214,7 @@ if run_btn:
         st.write(f"95th percentile: {nums['q95']:.4f}")
 
   
-        # Visualisation: paths
+        # Visualisation: Rendering of simulated price paths
     
         st.subheader("Simulated paths (subset)")
         paths = viz["paths"]
@@ -217,8 +226,8 @@ if run_btn:
             for p in paths:
                 plt.plot(p)
             
+            # Horizontal line representing the strike price threshold
             plt.axhline(y=K, color="r", linestyle="--", label="Strike price")
-            
             
             plt.xlabel("Step")
             plt.ylabel("Underlying price")
@@ -226,7 +235,7 @@ if run_btn:
         
 
    
-        # Visualisation: histogram
+        # Visualisation: Discounted payoff histogram for terminal values
     
         st.subheader("Discounted payoff histogram")
         hist = viz["payoff_hist"]
@@ -248,7 +257,7 @@ if run_btn:
             st.info("Histogram data not available.")
 
   
-        # Debug panel 
+        # Debug Panel: Verification of raw dictionary outputs 
    
         with st.expander("Raw pipeline output", expanded=False):
             st.write("Inputs")
@@ -269,6 +278,7 @@ if run_btn:
     except Exception as e:
         st.error(str(e))
 
+# Documentation reference for Monte Carlo output terminology
 with st.expander("Monte Carlo metrics explained", expanded=False):
     st.markdown(
         """
@@ -288,4 +298,3 @@ P(payoff > premium)
 Fraction of simulations where the discounted payoff exceeds the reference premium.
         """
     )
-

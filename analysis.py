@@ -1,19 +1,19 @@
 # analysis.py
 
 import math
-from datetime import date, datetime
-from market import compute_historical_volatility
 import random
+from datetime import date, datetime
 from typing import Any, Dict, List
-
-
+# Consolidated internal imports
+from market import compute_historical_volatility
+from db_init import get_prices_for_ticker
 
 
 def Build_Model_Inputs(ctx):
     """
     Build numerical inputs required for Monte Carlo GBM simulation.
     """
-    # Context is valid by default unless explicitly marked invalid
+    # Validate the contract context provided by the caller
     if ctx is None:
         raise ValueError("Invalid contract context")
     if ctx.get("valid", True) is not True:
@@ -23,13 +23,14 @@ def Build_Model_Inputs(ctx):
     expiry = ctx["expiry"]
     closes = ctx.get("closes")
 
+    # Ensure price data exists to calculate drift and volatility
     if closes is None or len(closes) < 2:
         raise ValueError("Insufficient price history to build model inputs")
 
     # Volatility from yfinance-memoised path
     sigma = compute_historical_volatility(ticker)
 
-    # Estimate drift using mean of log returns
+    # Estimate drift (mu) using the mean of daily log returns
     log_returns = []
     for i in range(1, len(closes)):
         p0 = float(closes[i - 1])
@@ -43,10 +44,11 @@ def Build_Model_Inputs(ctx):
     else:
         mu_daily = sum(log_returns) / len(log_returns)
 
+    # Annualise the daily drift (252 trading days)
     mu = mu_daily * 252
     r = 0.05
 
-    # Time to expiry in years
+    # Calculate Time to Expiry (T) in year-fractions
     today = date.today()
     exp_date = datetime.strptime(expiry, "%Y-%m-%d").date()
     days_to_expiry = max(1, (exp_date - today).days)
@@ -55,7 +57,7 @@ def Build_Model_Inputs(ctx):
     steps_per_year = 252
     steps = max(1, int(T_years * steps_per_year))
 
-    # Provide defaults if simulator expects them
+    # Handle simulation parameters from context
     N = int(ctx.get("N", 1000))
     seed = int(ctx.get("seed", 42))
 
@@ -72,7 +74,7 @@ def Build_Model_Inputs(ctx):
 
 def _randn_box_muller() -> float:
    
-    #Generate one standard normal random variable using Box-Muller.
+    # Generate one standard normal random variable using Box-Muller transformation.
     u1 = random.random()
     u2 = random.random()
     # Guard against log(0)
@@ -85,17 +87,8 @@ def Run_Monte_Carlo(ctx: Dict[str, Any], inputs: Dict[str, Any]) -> Dict[str, An
     """
     Simulate GBM price paths to expiry and return discounted payoffs plus
     a small subset of paths for plotting.
-
-
-    inputs must include:
-    - mu
-    - sigma
-    - r
-    - T_years
-    - steps
-    - N
-    - seed
     """
+    # Perform validation on required dictionary keys
     if ctx is None or inputs is None:
         raise ValueError("ctx and inputs must not be None")
 
@@ -122,6 +115,7 @@ def Run_Monte_Carlo(ctx: Dict[str, Any], inputs: Dict[str, Any]) -> Dict[str, An
     except (TypeError, ValueError):
         raise ValueError("ctx and inputs contain non-numeric fields where numeric expected")
 
+    # Ensure all financial parameters are within logical bounds
     if S0 <= 0:
         raise ValueError("ctx['S'] must be > 0")
     if K <= 0:
@@ -137,8 +131,10 @@ def Run_Monte_Carlo(ctx: Dict[str, Any], inputs: Dict[str, Any]) -> Dict[str, An
     if N < 1:
         raise ValueError("inputs['N'] must be >= 1")
 
+    # Set seed for repeatable results
     random.seed(seed)
 
+    # Pre-calculate GBM components to optimize inner loops
     dt = T / float(steps)
     sqrt_dt = math.sqrt(dt)
     drift = (mu - 0.5 * sigma * sigma) * dt
@@ -147,8 +143,10 @@ def Run_Monte_Carlo(ctx: Dict[str, Any], inputs: Dict[str, Any]) -> Dict[str, An
     discounted_payoffs: List[float] = []
     paths_subset: List[List[float]] = []
 
+    # Calculate step interval for visual path collection
     pick_every = max(1, N // 50)
 
+    # Main Simulation Loop: N paths
     for p in range(1, N + 1):
         S_t = S0
 
@@ -156,6 +154,7 @@ def Run_Monte_Carlo(ctx: Dict[str, Any], inputs: Dict[str, Any]) -> Dict[str, An
         if keep_path:
             path_series: List[float] = [S_t]
 
+        # Inner Loop: Progress price through discrete time steps
         for _ in range(steps):
             z = _randn_box_muller()
             growth = drift + (sigma * sqrt_dt * z)
@@ -164,11 +163,13 @@ def Run_Monte_Carlo(ctx: Dict[str, Any], inputs: Dict[str, Any]) -> Dict[str, An
             if keep_path:
                 path_series.append(S_t)
 
+        # Calculate terminal payoff based on option type
         if opt_type == "C":
             payoff = max(S_t - K, 0.0)
         else:
             payoff = max(K - S_t, 0.0)
 
+        # Apply risk-free discount factor to payoff
         discounted_payoffs.append(float(payoff * disc))
 
         if keep_path:
@@ -185,13 +186,7 @@ def Run_Monte_Carlo(ctx: Dict[str, Any], inputs: Dict[str, Any]) -> Dict[str, An
 
 def Derive_Metrics(ctx: Dict[str, Any], inputs: Dict[str, Any], sim: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Returns:
-    - mc_mean
-    - mc_median
-    - q05, q95
-    - p_itm (probability payoff > 0)
-    - p_netprofit (probability discounted payoff > premium_ref)
-    - premium_ref 
+    Returns statistical summaries and probabilities derived from the simulation data.
     """
     if ctx is None or inputs is None or sim is None:
         raise ValueError("ctx, inputs, and sim must not be None")
@@ -203,13 +198,10 @@ def Derive_Metrics(ctx: Dict[str, Any], inputs: Dict[str, Any], sim: Dict[str, A
     if not isinstance(payoffs, list) or len(payoffs) == 0:
         raise ValueError("discounted_payoffs must be a non-empty list")
 
-    # premium reference: provided by caller for now
     premium_ref = float(ctx.get("premium_ref", 0.0))
-
-    # Basic probabilities
     count = len(payoffs)
 
-    # payoff > 0 means ITM at expiry
+    # Tally ITM paths and paths exceeding the premium reference
     itm_count = 0
     net_count = 0
     for v in payoffs:
@@ -222,26 +214,21 @@ def Derive_Metrics(ctx: Dict[str, Any], inputs: Dict[str, Any], sim: Dict[str, A
     p_itm = itm_count / count
     p_netprofit = net_count / count
 
-    # Summary stats: sort once
+    # Prepare data for mean, median, and percentile calculations
     vals = [float(v) for v in payoffs]
     vals.sort()
 
-    # Mean
     mc_mean = sum(vals) / count
 
-    # Median
     if count % 2 == 1:
         mc_median = vals[count // 2]
     else:
         mid = count // 2
         mc_median = (vals[mid - 1] + vals[mid]) / 2.0
 
-    # Percentiles
-    # this index formula is subtly wrong for small samples and tends to bias low. 
-    # Should not be a major issue since im using larger samples.
-    # It uses int(p*count) instead of a rank based on (count-1).
+    # Percentile extraction logic (p: float from 0 to 1)
     def _percentile(sorted_vals: List[float], p: float) -> float:
-        idx = int(p * count)  # <-- bug is here
+        idx = int(p * count)  # <-- note: int truncation used here
         if idx < 0:
             idx = 0
         if idx >= count:
@@ -265,10 +252,7 @@ def Derive_Metrics(ctx: Dict[str, Any], inputs: Dict[str, Any], sim: Dict[str, A
 
 def Run_Analysis_Pipeline(ctx: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Returns:
-    - inputs (model inputs dict)
-    - sim (simulation output dict)
-    - metrics (metrics dict)
+    Orchestrates the build, run, and summarize phases of the analysis.
     """
     if ctx is None:
         raise ValueError("ctx must not be None")
@@ -287,7 +271,7 @@ def Run_Analysis_Pipeline(ctx: Dict[str, Any]) -> Dict[str, Any]:
 
 def Render_Findings(ctx: Dict[str, Any], inputs: Dict[str, Any], metrics: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Prepares user suggestions ready for streamlit
+    Prepares textual summaries and flags based on simulation outputs.
     """
     if ctx is None or inputs is None or metrics is None:
         raise ValueError("ctx, inputs, and metrics must not be None")
@@ -321,12 +305,14 @@ def Render_Findings(ctx: Dict[str, Any], inputs: Dict[str, Any], metrics: Dict[s
         label = "Call" if opt_type == "C" else "Put"
         summary_lines.append(f"Contract: {label}, Strike {float(strike):.2f}")
 
+    # Build summary results for the UI
     summary_lines.append(f"Mean discounted payoff: {mc_mean:.4f}")
     summary_lines.append(f"Median discounted payoff: {mc_median:.4f}")
     summary_lines.append(f"5th to 95th percentile range: {q05:.4f} to {q95:.4f}")
     summary_lines.append(f"Probability ITM at expiry: {p_itm:.4f}")
     summary_lines.append(f"Probability payoff exceeds premium: {p_netprofit:.4f}")
 
+    # Recommendation flags based on probability thresholds
     flags: List[str] = []
     if p_netprofit >= 0.5:
         flags.append("Net profit probability is at least 0.5")
@@ -352,9 +338,7 @@ def Render_Findings(ctx: Dict[str, Any], inputs: Dict[str, Any], metrics: Dict[s
 
 def Visualise_Results(sim: Dict[str, Any], max_paths: int = 30, bins: int = 30) -> Dict[str, Any]:
     """
-      Returns:
-    - paths: list of paths (each path is a list of floats)
-    - payoff_hist: dict with 'bin_edges' and 'counts'
+    Prepares path data and histogram statistics for graphical rendering.
     """
     if sim is None:
         raise ValueError("sim must not be None")
@@ -383,7 +367,7 @@ def Visualise_Results(sim: Dict[str, Any], max_paths: int = 30, bins: int = 30) 
     if nb < 2:
         raise ValueError("bins must be >= 2")
 
-    # Limit paths for plotting
+    # Limit paths to subset size to prevent UI performance degradation
     paths_out: List[List[float]] = []
     for p in paths_subset[:mp]:
         if not isinstance(p, list) or len(p) < 2:
@@ -391,13 +375,12 @@ def Visualise_Results(sim: Dict[str, Any], max_paths: int = 30, bins: int = 30) 
         cleaned = [float(x) for x in p]
         paths_out.append(cleaned)
 
-    # Histogram for payoffs
+    # Histogram calculation for payoff distribution
     vals = [float(v) for v in payoffs]
     vmin = min(vals)
     vmax = max(vals)
 
     if vmin == vmax:
-        # Degenerate distribution: one bin
         return {
             "paths": paths_out,
             "payoff_hist": {
@@ -410,6 +393,7 @@ def Visualise_Results(sim: Dict[str, Any], max_paths: int = 30, bins: int = 30) 
     edges = [vmin + i * width for i in range(nb + 1)]
     counts = [0 for _ in range(nb)]
 
+    # Binning logic for the histogram
     for v in vals:
         idx = int((v - vmin) / width)
         if idx == nb:
@@ -425,8 +409,6 @@ def Visualise_Results(sim: Dict[str, Any], max_paths: int = 30, bins: int = 30) 
     }
 
 
-from db_init import get_prices_for_ticker
-
 def Load_Contract_Context(
     ticker: str,
     expiry: str,
@@ -436,12 +418,7 @@ def Load_Contract_Context(
     lookback_min_points: int = 30
 ) -> Dict[str, Any]:
     """
-    
-    Returns a dict with:
-    - valid
-    - ticker, expiry, strike, type
-    - S (spot)
-    - closes (list of close floats)
+    Aggregate market and static data into a unified contract context.
     """
     if ticker is None or str(ticker).strip() == "":
         raise ValueError("ticker must be non-empty")
@@ -453,6 +430,7 @@ def Load_Contract_Context(
     tkr = str(ticker).strip().upper()
     exp = str(expiry).strip()
 
+    # Normalise option type strings
     typ = str(option_type).strip().upper()
     if typ in ("CALL", "CALLS"):
         typ = "C"
@@ -480,12 +458,14 @@ def Load_Contract_Context(
     if min_pts < 2:
         raise ValueError("lookback_min_points must be >= 2")
 
+    # Fetch cached close prices from the database
     rows = get_prices_for_ticker(tkr)
     closes_all = [float(r[1]) for r in rows]
 
     if len(closes_all) < 2:
         raise ValueError("Insufficient cached closes in PRICE table for this ticker")
 
+    # Tail the data to fit the lookback window
     closes = closes_all[-min_pts:] if len(closes_all) >= min_pts else closes_all
 
     return {
@@ -499,7 +479,9 @@ def Load_Contract_Context(
     }
 
 def Select_Target_From_Positions(positions: List[Dict[str, Any]], contract_id: str) -> Dict[str, Any]:
-    
+    """
+    Search helper to retrieve a specific position dictionary by ID.
+    """
     if positions is None or not isinstance(positions, list):
         raise ValueError("positions must be a list")
 
@@ -514,4 +496,3 @@ def Select_Target_From_Positions(positions: List[Dict[str, Any]], contract_id: s
             return p
 
     raise ValueError("Selected contract_id not found in positions")
-
